@@ -86,3 +86,44 @@ export const TRANSACTION_CATEGORIES = [
   'Business',
   'Other',
 ] as const;
+
+// Get user-specific category for a merchant (returns null if no override)
+export async function getUserMerchantCategory(
+  userId: string,
+  merchantName: string
+): Promise<string | null> {
+  const result = await pool.query(
+    `SELECT category FROM user_merchant_categories 
+     WHERE user_id = $1 AND LOWER(merchant_name) = LOWER($2)`,
+    [userId, merchantName]
+  );
+  return result.rows[0]?.category || null;
+}
+
+// Set user-specific category for a merchant
+export async function setUserMerchantCategory(
+  userId: string,
+  merchantName: string,
+  category: string,
+  source: 'manual' | 'auto' = 'manual'
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO user_merchant_categories (user_id, merchant_name, category, source, updated_at)
+     VALUES ($1, $2, $3, $4, NOW())
+     ON CONFLICT (user_id, merchant_name) 
+     DO UPDATE SET category = $3, source = $4, updated_at = NOW()`,
+    [userId, merchantName, category, source]
+  );
+}
+
+// Delete user-specific category override
+export async function deleteUserMerchantCategory(
+  userId: string,
+  merchantName: string
+): Promise<void> {
+  await pool.query(
+    `DELETE FROM user_merchant_categories 
+     WHERE user_id = $1 AND LOWER(merchant_name) = LOWER($2)`,
+    [userId, merchantName]
+  );
+}

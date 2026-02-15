@@ -16,6 +16,7 @@ import { Loader2 } from "lucide-react";
 export default function Dashboard() {
   const { userId } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [merchantCategories, setMerchantCategories] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,10 +25,27 @@ export default function Dashboard() {
     
     try {
       setLoading(true);
-      const response = await fetch("/api/transactions");
-      if (!response.ok) throw new Error("Failed to fetch transactions");
-      const data = await response.json();
-      setTransactions(data.transactions || []);
+      
+      // Fetch transactions and merchant categories in parallel
+      const [txResponse, catResponse] = await Promise.all([
+        fetch("/api/transactions"),
+        fetch("/api/merchant-categories"),
+      ]);
+      
+      if (!txResponse.ok) throw new Error("Failed to fetch transactions");
+      
+      const txData = await txResponse.json();
+      setTransactions(txData.transactions || []);
+      
+      // Parse merchant categories into a lookup map
+      if (catResponse.ok) {
+        const catData = await catResponse.json();
+        const catMap: Record<string, string> = {};
+        catData.categories?.forEach((c: { merchant_name: string; category: string }) => {
+          catMap[c.merchant_name.toLowerCase()] = c.category;
+        });
+        setMerchantCategories(catMap);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -136,6 +154,7 @@ export default function Dashboard() {
             transactions={transactions}
             onDelete={handleDeleteTransaction}
             onUpdateCategory={handleUpdateCategory}
+            merchantCategories={merchantCategories}
           />
         </TabsContent>
 

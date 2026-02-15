@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { pool } from "@/lib/db";
+import { pool, setUserMerchantCategory } from "@/lib/db";
 
 export async function PUT(
   request: Request,
@@ -15,9 +15,9 @@ export async function PUT(
     const { category } = await request.json();
     const { id } = await params;
 
-    // Verify ownership
+    // Verify ownership and get merchant name
     const checkResult = await pool.query(
-      "SELECT user_id FROM transactions WHERE id = $1",
+      "SELECT user_id, merchant_name FROM transactions WHERE id = $1",
       [id]
     );
 
@@ -35,10 +35,17 @@ export async function PUT(
       );
     }
 
+    // Update the transaction
     await pool.query(
       "UPDATE transactions SET category = $1 WHERE id = $2",
       [category, id]
     );
+
+    // If category is set (not null), save as user's preferred category for this merchant
+    // This is user-specific and won't affect other users
+    if (category) {
+      await setUserMerchantCategory(userId, checkResult.rows[0].merchant_name, category, 'manual');
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

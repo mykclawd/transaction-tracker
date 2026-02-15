@@ -1,9 +1,12 @@
-import { pool, generateTransactionId, parseTransactionDate } from "@/lib/db";
+import { pool, generateTransactionId, parseTransactionDate, getUserMerchantCategory } from "@/lib/db";
+import { getMerchantCategory } from "@/lib/places";
 import OpenAI from "openai";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+const placesApiKey = process.env.GOOGLE_PLACES_API_KEY;
 
 interface Transaction {
   merchant_name: string;
@@ -158,7 +161,7 @@ async function processJob(job: any) {
     let added = 0;
     let duplicates = 0;
 
-    // Insert transactions
+    // Insert transactions with auto-categorization
     for (const t of rawTransactions) {
       const formattedDate = parseTransactionDate(t.transaction_date);
       if (!formattedDate) continue;
@@ -171,10 +174,18 @@ async function processJob(job: any) {
         t.bitcoin_rewards || 0
       );
 
+      // Check for user-specific category override first
+      let category = await getUserMerchantCategory(user_id, t.merchant_name);
+      
+      // If no override, try auto-categorization with Google Places
+      if (!category && placesApiKey) {
+        category = await getMerchantCategory(t.merchant_name, placesApiKey);
+      }
+
       try {
         await pool.query(
-          `INSERT INTO transactions (id, user_id, merchant_name, transaction_date, amount_spent, bitcoin_rewards)
-           VALUES ($1, $2, $3, $4, $5, $6)
+          `INSERT INTO transactions (id, user_id, merchant_name, transaction_date, amount_spent, bitcoin_rewards, category)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            ON CONFLICT (id) DO NOTHING`,
           [
             transactionId,
@@ -183,6 +194,7 @@ async function processJob(job: any) {
             formattedDate,
             t.amount_spent,
             t.bitcoin_rewards || 0,
+            category,
           ]
         );
         added++;

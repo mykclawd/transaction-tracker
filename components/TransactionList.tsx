@@ -26,12 +26,14 @@ interface TransactionListProps {
   transactions: Transaction[];
   onDelete: (id: string) => void;
   onUpdateCategory: (id: string, category: string | null) => void;
+  merchantCategories?: Record<string, string>;
 }
 
 export function TransactionList({
   transactions,
   onDelete,
   onUpdateCategory,
+  merchantCategories = {},
 }: TransactionListProps) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"date" | "amount" | "merchant">("date");
@@ -127,29 +129,36 @@ export function TransactionList({
                     {(Number(transaction.bitcoin_rewards) || 0).toFixed(8)}
                   </TableCell>
                   <TableCell>
-                    <Select
-                      value={transaction.category || "uncategorized"}
-                      onValueChange={(value) =>
-                        onUpdateCategory(
-                          transaction.id,
-                          value === "uncategorized" ? null : value
-                        )
-                      }
-                    >
-                      <SelectTrigger className="w-40">
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="uncategorized">
-                          Uncategorized
-                        </SelectItem>
-                        {TRANSACTION_CATEGORIES.map((cat) => (
-                          <SelectItem key={cat} value={cat}>
-                            {cat}
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={transaction.category || "uncategorized"}
+                        onValueChange={(value) =>
+                          onUpdateCategory(
+                            transaction.id,
+                            value === "uncategorized" ? null : value
+                          )
+                        }
+                      >
+                        <SelectTrigger className="w-40">
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="uncategorized">
+                            Uncategorized
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                          {TRANSACTION_CATEGORIES.map((cat) => (
+                            <SelectItem key={cat} value={cat}>
+                              {cat}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {merchantCategories[transaction.merchant_name.toLowerCase()] && (
+                        <span className="text-xs text-blue-500" title="Category saved for this merchant">
+                          💾
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Button
