@@ -4,7 +4,7 @@ export interface Transaction {
   merchant_name: string;
   transaction_date: string;
   amount_spent: number;
-  bitcoin_rewards: number;
+  bitcoin_rewards: number; // Denominated in USDC, not BTC
   category: string | null;
   created_at: string;
   updated_at: string;

@@ -99,7 +99,7 @@ export function TransactionList({
               <TableHead>Merchant</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Amount</TableHead>
-              <TableHead>BTC Rewards</TableHead>
+              <TableHead>BTC Rewards (USDC)</TableHead>
               <TableHead>Category</TableHead>
               <TableHead className="w-10"></TableHead>
             </TableRow>

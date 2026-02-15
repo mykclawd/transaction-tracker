@@ -60,7 +60,7 @@ export function MonthlySpending({ transactions }: MonthlySpendingProps) {
               <Tooltip
                 formatter={(value, name) => {
                   if (name === "total") return [typeof value === 'number' ? `$${value.toFixed(2)}` : value, "Spent"];
-                  if (name === "btcRewards") return [typeof value === 'number' ? value.toFixed(8) : value, "BTC Rewards"];
+                  if (name === "btcRewards") return [typeof value === 'number' ? value.toFixed(8) : value, "BTC Rewards (USDC)"];
                   return [value, name];
                 }}
                 contentStyle={{ borderRadius: "8px" }}
@@ -86,7 +86,7 @@ export function MonthlySpending({ transactions }: MonthlySpendingProps) {
                   <span className="font-medium">{month.count}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-zinc-500">BTC Rewards</span>
+                  <span className="text-sm text-zinc-500">BTC Rewards (USDC)</span>
                   <span className="font-medium font-mono text-xs">
                     {(Number(month.btcRewards) || 0).toFixed(8)}
                   </span>

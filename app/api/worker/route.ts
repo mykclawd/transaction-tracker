@@ -41,12 +41,13 @@ async function extractTransactionsFromFrames(frames: string[]): Promise<Transact
 - merchant_name (string)
 - transaction_date (format MM/DD/YYYY or similar)
 - amount_spent (number, parse the dollar amount)
-- bitcoin_rewards (number, parse BTC amount, default to 0 if not shown)
+- bitcoin_rewards (number, parse the BTC Rewards amount shown in USDC, default to 0 if not shown)
 
 IMPORTANT:
 - IGNORE any transactions marked as "pending" or "Pending"
 - Deduplicate: if you see the same transaction in multiple frames, only include it ONCE
 - Look for completed/posted transactions only
+- The "BTC Rewards" amount shown is denominated in USDC, not actual BTC
 
 Return ONLY a valid JSON array of transactions. Example:
 [
