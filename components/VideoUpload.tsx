@@ -201,14 +201,48 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       let errorMessage = `Batch ${batchNum} failed`;
       try {
         const errorData = await response.json();
-        errorMessage = errorData.error || errorMessage;
+        errorMessage = `Batch ${batchNum}: ${errorData.error || response.statusText}`;
       } catch {
-        // ignore parse errors
+        errorMessage = `Batch ${batchNum}: ${response.status} ${response.statusText}`;
       }
       throw new Error(errorMessage);
     }
 
     return response.json();
+  };
+
+  // Process batches with limited parallelism to avoid overwhelming Vercel
+  const processBatchesWithLimit = async (
+    batches: string[][],
+    concurrency: number = 3
+  ): Promise<{ jobId: string; result: any }[]> => {
+    const results: { jobId: string; result: any }[] = [];
+    
+    for (let i = 0; i < batches.length; i += concurrency) {
+      const chunk = batches.slice(i, i + concurrency);
+      const chunkStart = i + 1;
+      
+      setStepInfo({
+        step: "processing",
+        progress: 30 + Math.round((i / batches.length) * 60),
+        message: `Processing batches ${chunkStart}-${Math.min(i + concurrency, batches.length)} of ${batches.length}...`
+      });
+      
+      // Create jobs for this chunk in parallel
+      const jobPromises = chunk.map((batch, idx) => 
+        processBatch(batch, i + idx + 1, batches.length)
+      );
+      const jobs = await Promise.all(jobPromises);
+      
+      // Wait for all jobs in this chunk to complete
+      const resultPromises = jobs.map(({ jobId }) => 
+        waitForJob(jobId).then(result => ({ jobId, result }))
+      );
+      const chunkResults = await Promise.all(resultPromises);
+      results.push(...chunkResults);
+    }
+    
+    return results;
   };
 
   // Wait for a job to complete
@@ -249,26 +283,15 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       setStepInfo({ 
         step: "uploading", 
         progress: 30, 
-        message: `Uploading ${frames.length} frames in ${totalBatches} batch${totalBatches > 1 ? 'es' : ''}...` 
+        message: `Processing ${frames.length} frames in ${totalBatches} batch${totalBatches > 1 ? 'es' : ''} (3 at a time)...` 
       });
       
-      // Create all jobs in parallel
-      const jobPromises = batches.map((batch, i) => processBatch(batch, i + 1, totalBatches));
-      const jobs = await Promise.all(jobPromises);
-      
-      setStepInfo({ 
-        step: "processing", 
-        progress: 50, 
-        message: `AI analyzing ${totalBatches} batch${totalBatches > 1 ? 'es' : ''} in parallel... this can take a few minutes. You can leave and come back later.` 
-      });
-      
-      // Wait for all jobs to complete in parallel
-      const resultPromises = jobs.map(({ jobId }) => waitForJob(jobId));
-      const results = await Promise.all(resultPromises);
+      // Process batches with limited parallelism (3 at a time to avoid overwhelming Vercel)
+      const results = await processBatchesWithLimit(batches, 3);
       
       // Aggregate results
-      const totalTransactions = results.reduce((sum, r) => sum + (r?.transactionsCreated || 0), 0);
-      const lastJobId = jobs[jobs.length - 1]?.jobId || "";
+      const totalTransactions = results.reduce((sum, r) => sum + (r?.result?.transactionsCreated || 0), 0);
+      const lastJobId = results[results.length - 1]?.jobId || "";
       
       // All batches complete
       setJobId(lastJobId);
