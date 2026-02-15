@@ -69,7 +69,7 @@ If you see dates in other formats, convert to MM/DD/YYYY.`,
         content,
       },
     ],
-    max_tokens: 4000,
+    max_tokens: 8000,
   });
 
   const responseContent = response.choices[0].message.content;
@@ -80,44 +80,87 @@ If you see dates in other formats, convert to MM/DD/YYYY.`,
   // Log the raw response for debugging
   console.log("OpenAI response (first 500 chars):", responseContent.substring(0, 500));
 
-  // Try to extract JSON array - handle various formats
-  let jsonStr: string | null = null;
+  // Step 1: Strip markdown code block markers if present
+  let cleanedContent = responseContent;
   
-  // Try 1: Direct JSON array match
-  const jsonMatch = responseContent.match(/\[[\s\S]*\]/);
-  if (jsonMatch) {
-    jsonStr = jsonMatch[0];
-  }
+  // Remove opening ```json or ``` 
+  cleanedContent = cleanedContent.replace(/^```(?:json)?\s*/i, '');
+  // Remove closing ```
+  cleanedContent = cleanedContent.replace(/```\s*$/, '');
   
-  // Try 2: Extract from markdown code block
-  if (!jsonStr) {
-    const codeBlockMatch = responseContent.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (codeBlockMatch) {
-      const innerMatch = codeBlockMatch[1].match(/\[[\s\S]*\]/);
-      if (innerMatch) {
-        jsonStr = innerMatch[0];
-      }
-    }
-  }
+  // Step 2: Try to extract JSON array
+  const jsonMatch = cleanedContent.match(/\[[\s\S]*\]/);
   
-  // Try 3: Check if response indicates no transactions
-  if (!jsonStr) {
+  if (!jsonMatch) {
+    // Check if response indicates no transactions
     const lowerContent = responseContent.toLowerCase();
     if (lowerContent.includes("no transaction") || lowerContent.includes("empty") || lowerContent.includes("[]")) {
       console.log("No transactions found in frames");
       return [];
     }
-  }
-
-  if (!jsonStr) {
+    
     console.error("Failed to parse response:", responseContent);
     throw new Error("Could not parse transactions from response: " + responseContent.substring(0, 200));
   }
 
+  let jsonStr = jsonMatch[0];
+  
+  // Step 3: Try to parse, and if it fails due to truncation, try to fix it
   try {
     return JSON.parse(jsonStr) as Transaction[];
   } catch (parseErr) {
-    console.error("JSON parse error:", parseErr, "JSON string:", jsonStr.substring(0, 200));
+    console.log("Initial parse failed, attempting to fix truncated JSON...");
+    
+    // Try to fix truncated JSON by finding the last complete object
+    // Count brackets to find where we have complete objects
+    let depth = 0;
+    let lastCompleteIndex = -1;
+    let inString = false;
+    let escaped = false;
+    
+    for (let i = 0; i < jsonStr.length; i++) {
+      const char = jsonStr[i];
+      
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      
+      if (char === '\\' && inString) {
+        escaped = true;
+        continue;
+      }
+      
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+      
+      if (inString) continue;
+      
+      if (char === '[' || char === '{') {
+        depth++;
+      } else if (char === ']' || char === '}') {
+        depth--;
+        if (depth === 1 && char === '}') {
+          // Found end of a complete object at array level
+          lastCompleteIndex = i;
+        }
+      }
+    }
+    
+    if (lastCompleteIndex > 0) {
+      // Truncate to last complete object and close the array
+      const fixedJson = jsonStr.substring(0, lastCompleteIndex + 1) + ']';
+      console.log("Attempting fixed JSON (truncated at last complete object)");
+      try {
+        return JSON.parse(fixedJson) as Transaction[];
+      } catch (fixErr) {
+        console.error("Fixed JSON also failed:", fixErr);
+      }
+    }
+    
+    console.error("JSON parse error:", parseErr, "JSON string:", jsonStr.substring(0, 300));
     throw new Error("Invalid JSON in response: " + (parseErr as Error).message);
   }
 }
@@ -156,7 +199,7 @@ Return ONLY a valid JSON array of transactions.`,
         ],
       },
     ],
-    max_tokens: 4000,
+    max_tokens: 8000,
   });
 
   const content = response.choices[0].message.content;
