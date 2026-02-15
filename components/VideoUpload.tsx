@@ -211,30 +211,21 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     return response.json();
   };
 
-  // Process batches sequentially to avoid rate limits
+  // Wait for all jobs to complete (poll sequentially to avoid rate limits)
   const processBatchesWithLimit = async (
-    batches: string[][]
-  ): Promise<{ jobId: string; result: any }[]> => {
-    const results: { jobId: string; result: any }[] = [];
+    jobIds: string[]
+  ): Promise<any[]> => {
+    const results: any[] = [];
     
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
-      
+    for (let i = 0; i < jobIds.length; i++) {
       setStepInfo({
         step: "processing",
-        progress: 30 + Math.round((i / batches.length) * 60),
-        message: `Processing batch ${i + 1} of ${batches.length}... this may take a few minutes.`
+        progress: 55 + Math.round((i / jobIds.length) * 40),
+        message: `Waiting for batch ${i + 1} of ${jobIds.length}... You can close this page and check back later.`
       });
       
-      // Process one batch at a time to avoid rate limits
-      const { jobId } = await processBatch(batch, i + 1, batches.length);
-      const result = await waitForJob(jobId);
-      results.push({ jobId, result });
-      
-      // Small delay between batches to avoid rate limits
-      if (i < batches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
+      const result = await waitForJob(jobIds[i]);
+      results.push(result);
     }
     
     return results;
@@ -278,18 +269,35 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       setStepInfo({ 
         step: "uploading", 
         progress: 30, 
-        message: `Processing ${frames.length} frames in ${totalBatches} batch${totalBatches > 1 ? 'es' : ''} (3 at a time)...` 
+        message: `Uploading ${totalBatches} batch${totalBatches > 1 ? 'es' : ''}...` 
       });
       
-      // Process batches with limited parallelism (3 at a time to avoid overwhelming Vercel)
-      const results = await processBatchesWithLimit(batches, 3);
+      // Submit ALL batches at once (fire and forget)
+      const jobIds: string[] = [];
+      for (let i = 0; i < batches.length; i++) {
+        const { jobId } = await processBatch(batches[i], i + 1, totalBatches);
+        jobIds.push(jobId);
+        setStepInfo({ 
+          step: "uploading", 
+          progress: 30 + Math.round(((i + 1) / totalBatches) * 20), 
+          message: `Uploaded batch ${i + 1} of ${totalBatches}...` 
+        });
+      }
+      
+      setStepInfo({ 
+        step: "processing", 
+        progress: 55, 
+        message: `${totalBatches} batch${totalBatches > 1 ? 'es' : ''} queued! You can close this page — check back later for results.` 
+      });
+      
+      // Optional: wait for results if user stays on page
+      const results = await processBatchesWithLimit(batches.map((_, i) => jobIds[i]));
       
       // Aggregate results
-      const totalTransactions = results.reduce((sum, r) => sum + (r?.result?.transactionsCreated || 0), 0);
-      const lastJobId = results[results.length - 1]?.jobId || "";
+      const totalTransactions = results.reduce((sum, r) => sum + (r?.transactionsCreated || 0), 0);
       
       // All batches complete
-      setJobId(lastJobId);
+      setJobId(jobIds[jobIds.length - 1] || "");
       setJobResult({ transactionsCreated: totalTransactions });
       setStepInfo({ 
         step: "completed", 
