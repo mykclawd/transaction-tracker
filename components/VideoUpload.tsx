@@ -134,9 +134,9 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         canvas.width = Math.round(video.videoWidth * scale);
         canvas.height = Math.round(video.videoHeight * scale);
 
-        // Extract 1 frame every 2 seconds for better coverage
+        // Extract 1 frame every 1 second for better coverage
         // No cap - we'll send frames in batches to stay under payload limits
-        const frameInterval = 2; // 1 frame every 2 seconds
+        const frameInterval = 1; // 1 frame every 1 second
         const frameCount = Math.ceil(duration / frameInterval);
         const frames: string[] = [];
 
