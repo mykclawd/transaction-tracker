@@ -6,7 +6,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VideoUpload } from "@/components/VideoUpload";
-import { JobStatus } from "@/components/JobStatus";
 import { TransactionList } from "@/components/TransactionList";
 import { SpendingChart } from "@/components/SpendingChart";
 import { CategoryBreakdown } from "@/components/CategoryBreakdown";
@@ -105,9 +104,6 @@ export default function Dashboard() {
           {error}
         </div>
       )}
-
-      {/* Show background job status if any jobs are processing */}
-      <JobStatus onAllComplete={fetchTransactions} />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>

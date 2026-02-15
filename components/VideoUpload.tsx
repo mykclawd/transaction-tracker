@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Upload, Loader2, X, FileVideo, Check, Image, Send, Brain } from "lucide-react";
+import { Upload, Loader2, X, FileVideo, Check, Image, Send, Brain, Clock, CheckCircle, XCircle, LogOut } from "lucide-react";
 
 interface VideoUploadProps {
   onUploadComplete: () => void;
@@ -15,23 +15,71 @@ interface StepInfo {
   step: ProcessingStep;
   progress: number;
   message: string;
+  canLeave?: boolean;  // Indicates if user can safely leave the page
+}
+
+interface BackgroundJob {
+  id: string;
+  status: string;
+  created_at: string;
 }
 
 export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [stepInfo, setStepInfo] = useState<StepInfo>({ step: "idle", progress: 0, message: "" });
+  const [stepInfo, setStepInfo] = useState<StepInfo>({ step: "idle", progress: 0, message: "", canLeave: true });
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobResult, setJobResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [backgroundJobs, setBackgroundJobs] = useState<BackgroundJob[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const backgroundPollRef = useRef<NodeJS.Timeout | null>(null);
 
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
+      }
+      if (backgroundPollRef.current) {
+        clearInterval(backgroundPollRef.current);
+      }
+    };
+  }, []);
+
+  // Fetch background jobs on mount and poll for updates
+  const fetchBackgroundJobs = async () => {
+    try {
+      const response = await fetch("/api/jobs/status");
+      if (response.ok) {
+        const data = await response.json();
+        const activeJobs = (data.jobs || []).filter((j: BackgroundJob) => 
+          j.status === "pending" || j.status === "processing"
+        );
+        setBackgroundJobs(activeJobs);
+        
+        // Trigger worker if there are pending jobs
+        if (activeJobs.length > 0) {
+          fetch("/api/worker", { method: "POST" }).catch(() => {});
+        }
+        
+        // Refresh transactions when jobs complete
+        if (activeJobs.length === 0 && backgroundJobs.length > 0) {
+          onUploadComplete();
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch background jobs:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchBackgroundJobs();
+    backgroundPollRef.current = setInterval(fetchBackgroundJobs, 3000);
+    return () => {
+      if (backgroundPollRef.current) {
+        clearInterval(backgroundPollRef.current);
       }
     };
   }, []);
@@ -204,16 +252,10 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     return jobId;
   };
 
-  // Track poll count to avoid calling worker too often
-  let pollCount = 0;
-
   // Trigger worker and check job status
   const checkJobStatus = async (jobId: string): Promise<{ status: string; result?: any; error?: string }> => {
-    // Only trigger worker every 3rd poll to reduce load
-    pollCount++;
-    if (pollCount % 3 === 1) {
-      await fetch("/api/worker", { method: "POST" }).catch(() => {});
-    }
+    // Trigger worker to process jobs
+    await fetch("/api/worker", { method: "POST" }).catch(() => {});
     
     // Check job status
     const response = await fetch(`/api/jobs/${jobId}`);
@@ -232,8 +274,8 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         throw new Error(data.error || "Job failed");
       }
       
-      // Wait 5 seconds before polling again
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      // Wait 2 seconds before polling again
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
   };
 
@@ -244,19 +286,20 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     resetState();
 
     try {
-      // Step 1: Extract frames
-      setStepInfo({ step: "extracting", progress: 5, message: "Loading video..." });
+      // Step 1: Extract frames (user must stay)
+      setStepInfo({ step: "extracting", progress: 5, message: "Loading video...", canLeave: false });
       const frames = await extractFrames(file);
       
-      // Step 2: Chunk frames into batches of 15 (~1.5MB each, safe under 4.5MB limit)
-      const BATCH_SIZE = 10;  // Smaller batches = fewer tokens = less rate limiting
+      // Step 2: Chunk frames into batches
+      const BATCH_SIZE = 15;
       const batches = chunkArray(frames, BATCH_SIZE);
       const totalBatches = batches.length;
       
       setStepInfo({ 
         step: "uploading", 
         progress: 30, 
-        message: `Submitting ${totalBatches} batch${totalBatches > 1 ? 'es' : ''} to queue...` 
+        message: `Submitting ${totalBatches} batch${totalBatches > 1 ? 'es' : ''} to queue...`,
+        canLeave: false
       });
       
       // Submit all batches to the job queue
@@ -267,23 +310,34 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         setStepInfo({ 
           step: "uploading", 
           progress: 30 + Math.round(((i + 1) / totalBatches) * 15), 
-          message: `Queued batch ${i + 1} of ${totalBatches}...` 
+          message: `Queued batch ${i + 1} of ${totalBatches}...`,
+          canLeave: false
         });
       }
       
+      // All batches queued - user can now leave!
       setStepInfo({ 
         step: "processing", 
         progress: 50, 
-        message: `All ${totalBatches} batches queued! Processing one at a time... You can close this page and check back later.` 
+        message: `✅ All ${totalBatches} batches queued! Processing in background...`,
+        canLeave: true
       });
       
-      // Wait for all jobs to complete (user can leave, results will be on dashboard)
+      // Refresh background jobs list
+      fetchBackgroundJobs();
+      
+      // Clear file input
+      setFile(null);
+      if (inputRef.current) inputRef.current.value = "";
+      
+      // Wait for all jobs to complete (optional - user can leave)
       let totalTransactions = 0;
       for (let i = 0; i < jobIds.length; i++) {
         setStepInfo({ 
           step: "processing", 
-          progress: 50 + Math.round(((i + 1) / jobIds.length) * 45), 
-          message: `Waiting for batch ${i + 1} of ${totalBatches}... You can close this page.` 
+          progress: 50 + Math.round(((i + 1) / jobIds.length) * 45),
+          canLeave: true,
+          message: `Processing batch ${i + 1} of ${totalBatches}...` 
         });
         
         const result = await waitForJob(jobIds[i]);
@@ -295,7 +349,8 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       setStepInfo({ 
         step: "completed", 
         progress: 100, 
-        message: `Found ${totalTransactions} transaction${totalTransactions !== 1 ? 's' : ''} from ${totalBatches} batch${totalBatches > 1 ? 'es' : ''}!` 
+        message: `Found ${totalTransactions} transaction${totalTransactions !== 1 ? 's' : ''} from ${totalBatches} batch${totalBatches > 1 ? 'es' : ''}!`,
+        canLeave: true
       });
       onUploadComplete();
       
@@ -473,7 +528,55 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
                 />
               </div>
               <p className="text-sm text-zinc-600 dark:text-zinc-400">{stepInfo.message}</p>
+              
+              {/* Can Leave Indicator */}
+              {stepInfo.step !== "completed" && stepInfo.step !== "failed" && (
+                <div className={`flex items-center gap-2 text-sm mt-2 ${
+                  stepInfo.canLeave 
+                    ? "text-green-600 dark:text-green-400" 
+                    : "text-amber-600 dark:text-amber-400"
+                }`}>
+                  {stepInfo.canLeave ? (
+                    <>
+                      <LogOut className="h-4 w-4" />
+                      <span>You can safely close this page — processing continues in background</span>
+                    </>
+                  ) : (
+                    <>
+                      <Clock className="h-4 w-4" />
+                      <span>Please keep this page open while uploading...</span>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
+          </div>
+        )}
+
+        {/* Background Jobs Status */}
+        {backgroundJobs.length > 0 && stepInfo.step === "idle" && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950">
+            <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="font-medium">Background Processing</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-3 text-sm text-blue-700 dark:text-blue-300">
+              {backgroundJobs.filter(j => j.status === "pending").length > 0 && (
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {backgroundJobs.filter(j => j.status === "pending").length} pending
+                </span>
+              )}
+              {backgroundJobs.filter(j => j.status === "processing").length > 0 && (
+                <span className="flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {backgroundJobs.filter(j => j.status === "processing").length} processing
+                </span>
+              )}
+            </div>
+            <p className="mt-2 text-xs text-blue-600 dark:text-blue-400">
+              Your transactions will appear automatically when processing completes
+            </p>
           </div>
         )}
 

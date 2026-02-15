@@ -8,11 +8,11 @@ const openai = new OpenAI({
 
 const placesApiKey = process.env.GOOGLE_PLACES_API_KEY;
 
-// Retry helper for rate limit errors - VERY conservative
+// Retry helper for rate limit errors
 async function withRetry<T>(
   fn: () => Promise<T>,
-  maxRetries: number = 5,
-  baseDelayMs: number = 10000  // Start with 10 seconds
+  maxRetries: number = 3,
+  baseDelayMs: number = 3000  // Start with 3 seconds
 ): Promise<T> {
   let lastError: Error | null = null;
   
@@ -42,8 +42,6 @@ async function withRetry<T>(
   throw lastError;
 }
 
-// Global cooldown tracker - wait between jobs
-let lastJobCompletedAt = 0;
 
 interface Transaction {
   merchant_name: string;
@@ -391,14 +389,6 @@ export async function POST() {
 
 async function handleWorker() {
   try {
-    // COOLDOWN: Wait at least 5 seconds between finishing one job and starting another
-    const timeSinceLastJob = Date.now() - lastJobCompletedAt;
-    const cooldownMs = 5000;
-    if (lastJobCompletedAt > 0 && timeSinceLastJob < cooldownMs) {
-      console.log(`⏳ Cooldown: ${((cooldownMs - timeSinceLastJob) / 1000).toFixed(1)}s remaining`);
-      return Response.json({ message: "Cooldown between jobs", waitMs: cooldownMs - timeSinceLastJob });
-    }
-
     // THROTTLE: Check if another job is currently processing
     // Allow if the processing job is stuck (>5 min old) - reset it to pending
     const processingCheck = await pool.query(
@@ -449,7 +439,6 @@ async function handleWorker() {
     await processJob(job);
     
     // Set cooldown timestamp
-    lastJobCompletedAt = Date.now();
 
     return Response.json({ 
       processed: 1,
