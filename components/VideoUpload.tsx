@@ -237,15 +237,26 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
 
   // Submit a batch as a job
   const submitBatch = async (frames: string[]): Promise<string> => {
+    const payload = JSON.stringify({ frames });
+    
+    // Log payload size for debugging
+    const payloadSizeMB = payload.length / 1024 / 1024;
+    console.log(`Submitting batch: ${frames.length} frames, ${payloadSizeMB.toFixed(2)}MB`);
+    
+    if (payloadSizeMB > 4) {
+      throw new Error(`Payload too large: ${payloadSizeMB.toFixed(2)}MB (max 4MB)`);
+    }
+    
     const response = await fetch("/api/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ frames }),
+      body: payload,
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `Failed to submit batch: ${response.status}`);
+      const errorText = await response.text().catch(() => "Unknown error");
+      console.error(`Submit failed: ${response.status}`, errorText);
+      throw new Error(`Failed to submit batch: ${response.status} - ${errorText}`);
     }
 
     const { jobId } = await response.json();
@@ -290,8 +301,8 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       setStepInfo({ step: "extracting", progress: 5, message: "Loading video...", canLeave: false });
       const frames = await extractFrames(file);
       
-      // Step 2: Chunk frames into batches (larger batches for Pro plan)
-      const BATCH_SIZE = 20; // Increased for Pro - fewer API calls, faster queueing
+      // Step 2: Chunk frames into batches (balance between speed and payload size)
+      const BATCH_SIZE = 12; // ~12 frames @ 0.5s = 6 seconds of video per batch
       const batches = chunkArray(frames, BATCH_SIZE);
       const totalBatches = batches.length;
       
