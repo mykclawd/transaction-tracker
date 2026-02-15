@@ -98,7 +98,7 @@ export default function Dashboard() {
           <CardHeader className="pb-2">
             <CardDescription>Total Spent</CardDescription>
             <CardTitle className="text-3xl">
-              ${transactions.reduce((sum, t) => sum + t.amount_spent, 0).toFixed(2)}
+              ${transactions.reduce((sum, t) => sum + (Number(t.amount_spent) || 0), 0).toFixed(2)}
             </CardTitle>
           </CardHeader>
         </Card>
@@ -106,7 +106,7 @@ export default function Dashboard() {
           <CardHeader className="pb-2">
             <CardDescription>Total Bitcoin Rewards</CardDescription>
             <CardTitle className="text-3xl">
-              {transactions.reduce((sum, t) => sum + t.bitcoin_rewards, 0).toFixed(8)} BTC
+              {transactions.reduce((sum, t) => sum + (Number(t.bitcoin_rewards) || 0), 0).toFixed(8)} BTC
             </CardTitle>
           </CardHeader>
         </Card>
@@ -115,7 +115,7 @@ export default function Dashboard() {
             <CardDescription>Average Transaction</CardDescription>
             <CardTitle className="text-3xl">
               ${transactions.length > 0
-                ? (transactions.reduce((sum, t) => sum + t.amount_spent, 0) / transactions.length).toFixed(2)
+                ? (transactions.reduce((sum, t) => sum + (Number(t.amount_spent) || 0), 0) / transactions.length).toFixed(2)
                 : "0.00"}
             </CardTitle>
           </CardHeader>
