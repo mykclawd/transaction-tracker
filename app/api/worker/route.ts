@@ -402,10 +402,14 @@ export async function POST() {
   return handleWorker();
 }
 
+// Configuration for concurrent processing
+const MAX_CONCURRENT_JOBS = 2;
+const JOB_TIMEOUT_MINUTES = 5;
+
 async function handleWorker() {
   try {
     // Auto-retry failed jobs (max 2 retries)
-    const failedResult = await pool.query(
+    await pool.query(
       `UPDATE jobs 
        SET status = 'pending', 
            retry_count = COALESCE(retry_count, 0) + 1,
@@ -415,69 +419,70 @@ async function handleWorker() {
          WHERE status = 'failed' 
          AND COALESCE(retry_count, 0) < 2
          ORDER BY created_at ASC 
-         LIMIT 1
-       )
-       RETURNING id, retry_count`
+         LIMIT 2
+       )`
     );
-    
-    if (failedResult.rows.length > 0) {
-      console.log(`🔄 Retrying failed job ${failedResult.rows[0].id} (attempt ${failedResult.rows[0].retry_count})`);
-    }
 
-    // THROTTLE: Check if another job is currently processing
-    // Allow if the processing job is stuck (>5 min old) - reset it to pending
-    const processingCheck = await pool.query(
-      `SELECT id, created_at FROM jobs 
+    // Reset any stuck jobs (running longer than timeout)
+    const stuckResult = await pool.query(
+      `UPDATE jobs 
+       SET status = 'pending'
        WHERE status = 'processing' 
-       LIMIT 1`
+       AND started_at < NOW() - INTERVAL '${JOB_TIMEOUT_MINUTES} minutes'
+       RETURNING id`
     );
     
-    if (processingCheck.rows.length > 0) {
-      const processingJob = processingCheck.rows[0];
-      const createdAt = new Date(processingJob.created_at);
-      const now = new Date();
-      const ageMinutes = (now.getTime() - createdAt.getTime()) / 1000 / 60;
-      
-      if (ageMinutes < 5) {
-        // Another job is actively processing, skip this invocation
-        console.log(`⏳ Throttled: Job ${processingJob.id} is still processing (${ageMinutes.toFixed(1)} min)`);
-        return Response.json({ message: "Another job is processing, throttled" });
-      } else {
-        // Job is stuck, reset it to pending so it can be retried
-        console.log(`🔄 Resetting stuck job ${processingJob.id} (${ageMinutes.toFixed(1)} min old)`);
-        await pool.query(
-          `UPDATE jobs SET status = 'pending' WHERE id = $1`,
-          [processingJob.id]
-        );
-      }
+    if (stuckResult.rows.length > 0) {
+      console.log(`🔄 Reset ${stuckResult.rows.length} stuck jobs`);
     }
 
-    // Get next pending job (claim it immediately)
+    // Check current processing count
+    const processingCountResult = await pool.query(
+      `SELECT COUNT(*) as count FROM jobs WHERE status = 'processing'`
+    );
+    const processingCount = parseInt(processingCountResult.rows[0].count);
+    
+    const availableSlots = MAX_CONCURRENT_JOBS - processingCount;
+    
+    if (availableSlots <= 0) {
+      console.log(`⏳ At capacity: ${processingCount} jobs processing`);
+      return Response.json({ 
+        message: "At max concurrent capacity", 
+        processing: processingCount 
+      });
+    }
+
+    // Claim up to availableSlots pending jobs
     const result = await pool.query(
       `UPDATE jobs 
-       SET status = 'processing'
+       SET status = 'processing', started_at = NOW()
        WHERE id IN (
          SELECT id FROM jobs 
          WHERE status = 'pending' 
          ORDER BY created_at ASC 
-         LIMIT 1
+         LIMIT $1
        )
-       RETURNING id, user_id, payload`
+       RETURNING id, user_id, payload`,
+      [availableSlots]
     );
 
     if (result.rows.length === 0) {
       return Response.json({ message: "No pending jobs" });
     }
 
-    // Process the job
-    const job = result.rows[0];
-    await processJob(job);
+    // Process all claimed jobs concurrently
+    console.log(`🚀 Processing ${result.rows.length} jobs concurrently`);
+    const startTime = Date.now();
     
-    // Set cooldown timestamp
+    await Promise.all(result.rows.map(job => processJob(job)));
+    
+    const duration = Date.now() - startTime;
+    console.log(`✅ Batch completed in ${duration}ms`);
 
     return Response.json({ 
-      processed: 1,
-      jobId: job.id
+      processed: result.rows.length,
+      jobIds: result.rows.map(r => r.id),
+      durationMs: duration
     });
   } catch (error: any) {
     console.error("Worker error:", error);
