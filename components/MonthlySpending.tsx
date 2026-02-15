@@ -58,9 +58,9 @@ export function MonthlySpending({ transactions }: MonthlySpendingProps) {
                 tickFormatter={(value) => `$${value}`}
               />
               <Tooltip
-                formatter={(value: number, name: string) => {
-                  if (name === "total") return [`$${value.toFixed(2)}`, "Spent"];
-                  if (name === "btcRewards") return [value.toFixed(8), "BTC Rewards"];
+                formatter={(value, name) => {
+                  if (name === "total") return [typeof value === 'number' ? `$${value.toFixed(2)}` : value, "Spent"];
+                  if (name === "btcRewards") return [typeof value === 'number' ? value.toFixed(8) : value, "BTC Rewards"];
                   return [value, name];
                 }}
                 contentStyle={{ borderRadius: "8px" }}

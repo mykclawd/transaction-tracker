@@ -10,9 +10,6 @@ const openai = new OpenAI({
 
 // Extract frames from video using OpenAI Vision API
 async function extractTransactionsFromVideo(base64Video: string) {
-  // Remove data URL prefix
-  const base64Data = base64Video.split(",")[1];
-
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
     messages: [
@@ -46,12 +43,12 @@ If you see dates in other formats, convert to MM/DD/YYYY.`,
             text: "Extract all transactions from this video. Ignore pending transactions.",
           },
           {
-            type: "input_video",
+            type: "input_video" as any,
             input_video: {
               data: base64Video,
               format: "mp4",
             },
-          },
+          } as any,
         ],
       },
     ],

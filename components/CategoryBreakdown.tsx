@@ -75,9 +75,12 @@ export function CategoryBreakdown({ transactions }: CategoryBreakdownProps) {
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={({ name, percentage }) =>
-                  `${name}: ${percentage.toFixed(1)}%`
-                }
+                label={(props) => {
+                  const { name, value } = props;
+                  const total = topCategories.reduce((sum, item) => sum + item.value, 0);
+                  const pct = total > 0 ? ((value as number) / total) * 100 : 0;
+                  return `${name}: ${pct.toFixed(1)}%`;
+                }}
                 outerRadius={70}
                 fill="#8884d8"
                 dataKey="value"
@@ -90,8 +93,8 @@ export function CategoryBreakdown({ transactions }: CategoryBreakdownProps) {
                 ))}
               </Pie>
               <Tooltip
-                formatter={(value: number, name: string) => [
-                  `$${value.toFixed(2)}`,
+                formatter={(value, name) => [
+                  typeof value === 'number' ? `$${value.toFixed(2)}` : value,
                   name,
                 ]}
                 contentStyle={{ borderRadius: "8px" }}

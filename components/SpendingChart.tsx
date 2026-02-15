@@ -58,7 +58,7 @@ export function SpendingChart({ transactions }: SpendingChartProps) {
                 tickFormatter={(value) => `$${value}`}
               />
               <Tooltip
-                formatter={(value: number) => [`$${value.toFixed(2)}`, "Spent"]}
+                formatter={(value) => [typeof value === 'number' ? `$${value.toFixed(2)}` : value, "Spent"]}
                 contentStyle={{ borderRadius: "8px" }}
               />
               <Line
