@@ -8,6 +8,40 @@ const openai = new OpenAI({
 
 const placesApiKey = process.env.GOOGLE_PLACES_API_KEY;
 
+// Retry helper for rate limit errors
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelayMs: number = 2000
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      
+      // Check if it's a rate limit error (429)
+      const isRateLimit = error?.status === 429 || 
+                          error?.message?.includes('429') ||
+                          error?.message?.includes('rate limit') ||
+                          error?.message?.includes('quota');
+      
+      if (isRateLimit && attempt < maxRetries - 1) {
+        const delay = baseDelayMs * Math.pow(2, attempt); // Exponential backoff
+        console.log(`Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      
+      throw error;
+    }
+  }
+  
+  throw lastError;
+}
+
 interface Transaction {
   merchant_name: string;
   transaction_date: string;
@@ -35,7 +69,8 @@ async function extractTransactionsFromFrames(frames: string[]): Promise<Transact
     });
   }
 
-  const response = await openai.chat.completions.create({
+  // Wrap in retry for rate limit handling
+  const response = await withRetry(() => openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
       {
@@ -71,7 +106,7 @@ If you see dates in other formats, convert to MM/DD/YYYY.`,
       },
     ],
     max_tokens: 8000,
-  });
+  }));
 
   const responseContent = response.choices[0].message.content;
   if (!responseContent) {

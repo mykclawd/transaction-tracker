@@ -211,35 +211,30 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     return response.json();
   };
 
-  // Process batches with limited parallelism to avoid overwhelming Vercel
+  // Process batches sequentially to avoid rate limits
   const processBatchesWithLimit = async (
-    batches: string[][],
-    concurrency: number = 3
+    batches: string[][]
   ): Promise<{ jobId: string; result: any }[]> => {
     const results: { jobId: string; result: any }[] = [];
     
-    for (let i = 0; i < batches.length; i += concurrency) {
-      const chunk = batches.slice(i, i + concurrency);
-      const chunkStart = i + 1;
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
       
       setStepInfo({
         step: "processing",
         progress: 30 + Math.round((i / batches.length) * 60),
-        message: `Processing batches ${chunkStart}-${Math.min(i + concurrency, batches.length)} of ${batches.length}...`
+        message: `Processing batch ${i + 1} of ${batches.length}... this may take a few minutes.`
       });
       
-      // Create jobs for this chunk in parallel
-      const jobPromises = chunk.map((batch, idx) => 
-        processBatch(batch, i + idx + 1, batches.length)
-      );
-      const jobs = await Promise.all(jobPromises);
+      // Process one batch at a time to avoid rate limits
+      const { jobId } = await processBatch(batch, i + 1, batches.length);
+      const result = await waitForJob(jobId);
+      results.push({ jobId, result });
       
-      // Wait for all jobs in this chunk to complete
-      const resultPromises = jobs.map(({ jobId }) => 
-        waitForJob(jobId).then(result => ({ jobId, result }))
-      );
-      const chunkResults = await Promise.all(resultPromises);
-      results.push(...chunkResults);
+      // Small delay between batches to avoid rate limits
+      if (i < batches.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     }
     
     return results;
