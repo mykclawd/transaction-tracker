@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Upload, Loader2, X, FileVideo } from "lucide-react";
+import { Upload, Loader2, X, FileVideo, RefreshCw } from "lucide-react";
 import { VideoProcessResult } from "@/lib/types";
 
 interface VideoUploadProps {
@@ -13,9 +13,59 @@ interface VideoUploadProps {
 export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<VideoProcessResult | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<string | null>(null);
+  const [jobResult, setJobResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // Poll for job status
+  useEffect(() => {
+    if (!jobId || jobStatus === "completed" || jobStatus === "failed") {
+      return;
+    }
+
+    pollIntervalRef.current = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/jobs/${jobId}`);
+        if (!response.ok) throw new Error("Failed to fetch job status");
+        
+        const data = await response.json();
+        setJobStatus(data.status);
+        
+        if (data.status === "completed") {
+          setJobResult(data.result);
+          onUploadComplete();
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+          }
+        } else if (data.status === "failed") {
+          setError(data.error || "Processing failed");
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+          }
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }, 3000); // Poll every 3 seconds
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, [jobId, jobStatus, onUploadComplete]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -30,7 +80,16 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       }
       setFile(selected);
       setError(null);
-      setResult(null);
+      resetJobState();
+    }
+  };
+
+  const resetJobState = () => {
+    setJobId(null);
+    setJobStatus(null);
+    setJobResult(null);
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
     }
   };
 
@@ -39,12 +98,12 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
 
     setUploading(true);
     setError(null);
-    setResult(null);
+    resetJobState();
 
     try {
       const base64 = await fileToBase64(file);
       
-      const response = await fetch("/api/transactions/extract", {
+      const response = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ video: base64 }),
@@ -52,12 +111,12 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to process video");
+        throw new Error(errorData.error || "Failed to create job");
       }
 
       const data = await response.json();
-      setResult(data);
-      onUploadComplete();
+      setJobId(data.jobId);
+      setJobStatus("pending");
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
     } catch (err) {
@@ -78,9 +137,24 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
 
   const clearFile = () => {
     setFile(null);
-    setResult(null);
+    resetJobState();
     setError(null);
     if (inputRef.current) inputRef.current.value = "";
+  };
+
+  const getStatusMessage = () => {
+    switch (jobStatus) {
+      case "pending":
+        return "⏳ Upload complete! Waiting to start processing...";
+      case "processing":
+        return "🤖 AI is analyzing your video and extracting transactions... (this takes 1-2 minutes)";
+      case "completed":
+        return `✅ Processing complete! Added ${jobResult?.added || 0} new transactions, skipped ${jobResult?.duplicates || 0} duplicates.`;
+      case "failed":
+        return "❌ Processing failed. Please try again.";
+      default:
+        return null;
+    }
   };
 
   return (
@@ -101,10 +175,13 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
             onChange={handleFileSelect}
             className="hidden"
             id="video-upload"
+            disabled={!!jobId && jobStatus !== "completed" && jobStatus !== "failed"}
           />
           <label
             htmlFor="video-upload"
-            className="flex cursor-pointer items-center gap-2 rounded-lg border-2 border-dashed border-zinc-300 p-4 hover:border-zinc-400 dark:border-zinc-700 dark:hover:border-zinc-600"
+            className={`flex cursor-pointer items-center gap-2 rounded-lg border-2 border-dashed border-zinc-300 p-4 hover:border-zinc-400 dark:border-zinc-700 dark:hover:border-zinc-600 ${
+              jobId && jobStatus !== "completed" && jobStatus !== "failed" ? "opacity-50 cursor-not-allowed" : ""
+            }`}
           >
             {file ? (
               <>
@@ -124,7 +201,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
               <>
                 <Upload className="h-5 w-5" />
                 <span className="text-sm font-medium">
-                  Select video file
+                  {jobId ? "Upload another video" : "Select video file"}
                 </span>
               </>
             )}
@@ -134,10 +211,10 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
               {uploading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
+                  Uploading...
                 </>
               ) : (
-                "Process Video"
+                "Upload & Process"
               )}
             </Button>
           )}
@@ -149,13 +226,33 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
           </div>
         )}
 
-        {result && (
-          <div className="rounded-lg bg-green-50 p-3 text-sm text-green-800 dark:bg-green-950 dark:text-green-200">
-            <p className="font-medium">Video processed successfully!</p>
-            <p>
-              Found {result.transactions.length} transactions. Added{" "}
-              {result.added} new transactions, skipped {result.duplicates} duplicates.
-            </p>
+        {jobStatus && (
+          <div className={`rounded-lg p-4 text-sm ${
+            jobStatus === "completed" 
+              ? "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200" 
+              : jobStatus === "failed"
+              ? "bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200"
+              : "bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-200"
+          }`}>
+            <div className="flex items-start gap-3">
+              {jobStatus === "pending" && <Loader2 className="h-5 w-5 animate-spin mt-0.5" />}
+              {jobStatus === "processing" && <RefreshCw className="h-5 w-5 animate-spin mt-0.5" />}
+              {jobStatus === "completed" && <span className="text-lg">✅</span>}
+              {jobStatus === "failed" && <span className="text-lg">❌</span>}
+              <div>
+                <p className="font-medium">{getStatusMessage()}</p>
+                {jobStatus === "processing" && (
+                  <p className="text-xs mt-1 opacity-75">
+                    You can leave this page and come back later. Your transactions will be saved.
+                  </p>
+                )}
+                {jobStatus === "pending" && (
+                  <p className="text-xs mt-1 opacity-75">
+                    Usually starts processing within 30 seconds...
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </CardContent>
