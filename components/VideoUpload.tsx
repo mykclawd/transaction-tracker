@@ -129,14 +129,15 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
           return;
         }
 
-        // Resize to reasonable dimensions (max 1280px wide)
-        const scale = Math.min(1, 1280 / video.videoWidth);
-        canvas.width = video.videoWidth * scale;
-        canvas.height = video.videoHeight * scale;
+        // Resize to smaller dimensions (max 800px wide) to reduce payload
+        const scale = Math.min(1, 800 / video.videoWidth);
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
 
-        // Extract frames at regular intervals (1 frame per 2 seconds, max 30 frames)
-        const frameInterval = Math.max(2, duration / 30);
-        const frameCount = Math.min(30, Math.ceil(duration / frameInterval));
+        // Extract fewer frames (max 12) to stay under payload limits
+        // 12 frames at ~100KB each = ~1.2MB total (safe for Vercel's 4.5MB limit)
+        const frameInterval = Math.max(3, duration / 12);
+        const frameCount = Math.min(12, Math.ceil(duration / frameInterval));
         const frames: string[] = [];
 
         const captureFrame = (time: number): Promise<string> => {
@@ -144,8 +145,8 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
             video.currentTime = time;
             video.onseeked = () => {
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-              // Use JPEG with 80% quality to reduce size
-              const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+              // Use JPEG with 60% quality to reduce size (still readable for text)
+              const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
               res(dataUrl);
             };
           });
@@ -189,17 +190,30 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       const frames = await extractFrames(file);
       
       // Step 2: Upload frames
-      setStepInfo({ step: "uploading", progress: 30, message: "Uploading frames..." });
+      const payload = JSON.stringify({ frames });
+      const payloadSizeMB = (payload.length / 1024 / 1024).toFixed(2);
+      setStepInfo({ step: "uploading", progress: 30, message: `Uploading ${frames.length} frames (${payloadSizeMB}MB)...` });
+      
+      // Check payload size before sending (Vercel limit is ~4.5MB)
+      if (payload.length > 4 * 1024 * 1024) {
+        throw new Error(`Payload too large (${payloadSizeMB}MB). Try a shorter video.`);
+      }
       
       const response = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ frames }),
+        body: payload,
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to create job");
+        let errorMessage = "Failed to create job";
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
