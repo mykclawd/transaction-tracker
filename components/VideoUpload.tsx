@@ -135,9 +135,9 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         canvas.height = Math.round(video.videoHeight * scale);
 
         // Extract 1 frame every 2 seconds for better coverage
-        // Cap at 30 frames to stay under Vercel's 4.5MB payload limit
+        // No cap - we'll send frames in batches to stay under payload limits
         const frameInterval = 2; // 1 frame every 2 seconds
-        const frameCount = Math.min(30, Math.ceil(duration / frameInterval));
+        const frameCount = Math.ceil(duration / frameInterval);
         const frames: string[] = [];
 
         const captureFrame = (time: number): Promise<string> => {
@@ -178,6 +178,58 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     });
   };
 
+  // Helper to chunk array into batches
+  const chunkArray = <T,>(arr: T[], size: number): T[][] => {
+    const chunks: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+      chunks.push(arr.slice(i, i + size));
+    }
+    return chunks;
+  };
+
+  // Process a single batch of frames
+  const processBatch = async (frames: string[], batchNum: number, totalBatches: number): Promise<{ jobId: string }> => {
+    const payload = JSON.stringify({ frames });
+    
+    const response = await fetch("/api/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+    });
+
+    if (!response.ok) {
+      let errorMessage = `Batch ${batchNum} failed`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+      } catch {
+        // ignore parse errors
+      }
+      throw new Error(errorMessage);
+    }
+
+    return response.json();
+  };
+
+  // Wait for a job to complete
+  const waitForJob = async (jobId: string): Promise<any> => {
+    while (true) {
+      const response = await fetch(`/api/jobs/${jobId}`);
+      if (!response.ok) throw new Error("Failed to fetch job status");
+      
+      const data = await response.json();
+      
+      if (data.status === "completed") {
+        return data.result;
+      } else if (data.status === "failed") {
+        throw new Error(data.error || "Job failed");
+      }
+      
+      // Wait before polling again
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  };
+
   const handleUpload = async () => {
     if (!file) return;
 
@@ -189,42 +241,52 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       setStepInfo({ step: "extracting", progress: 5, message: "Loading video..." });
       const frames = await extractFrames(file);
       
-      // Step 2: Upload frames
-      const payload = JSON.stringify({ frames });
-      const payloadSizeMB = (payload.length / 1024 / 1024).toFixed(2);
-      setStepInfo({ step: "uploading", progress: 30, message: `Uploading ${frames.length} frames (${payloadSizeMB}MB)...` });
+      // Step 2: Chunk frames into batches of 15 (~1.5MB each, safe under 4.5MB limit)
+      const BATCH_SIZE = 15;
+      const batches = chunkArray(frames, BATCH_SIZE);
+      const totalBatches = batches.length;
       
-      // Check payload size before sending (Vercel limit is ~4.5MB)
-      if (payload.length > 4 * 1024 * 1024) {
-        throw new Error(`Payload too large (${payloadSizeMB}MB). Try a shorter video.`);
-      }
-      
-      const response = await fetch("/api/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: payload,
+      setStepInfo({ 
+        step: "uploading", 
+        progress: 30, 
+        message: `Processing ${frames.length} frames in ${totalBatches} batch${totalBatches > 1 ? 'es' : ''}...` 
       });
-
-      if (!response.ok) {
-        let errorMessage = "Failed to create job";
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-        } catch {
-          errorMessage = `Server error: ${response.status} ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
+      
+      let totalTransactions = 0;
+      let lastJobId = "";
+      
+      // Process batches sequentially
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        const batchProgress = 30 + Math.round((i / totalBatches) * 50);
+        
+        setStepInfo({ 
+          step: "processing", 
+          progress: batchProgress, 
+          message: `Processing batch ${i + 1} of ${totalBatches} (${batch.length} frames)... this can take a few minutes. You can leave and come back later.` 
+        });
+        
+        // Create job for this batch
+        const { jobId } = await processBatch(batch, i + 1, totalBatches);
+        lastJobId = jobId;
+        
+        // Wait for this batch to complete
+        const result = await waitForJob(jobId);
+        totalTransactions += result?.transactionsCreated || 0;
       }
-
-      const data = await response.json();
-      setJobId(data.jobId);
       
-      // Step 3: Processing
-      setStepInfo({ step: "processing", progress: 50, message: "AI analyzing transactions... this can take a few minutes. You can leave and come back later." });
+      // All batches complete
+      setJobId(lastJobId);
+      setJobResult({ transactionsCreated: totalTransactions });
+      setStepInfo({ 
+        step: "completed", 
+        progress: 100, 
+        message: `Found ${totalTransactions} transaction${totalTransactions !== 1 ? 's' : ''} from ${totalBatches} batch${totalBatches > 1 ? 'es' : ''}!` 
+      });
+      onUploadComplete();
       
-      setFile(null);
-      if (inputRef.current) inputRef.current.value = "";
     } catch (err) {
+      console.error("Upload error:", err);
       const message = err instanceof Error ? err.message : "Upload failed";
       setError(message);
       setStepInfo({ step: "failed", progress: 0, message });
