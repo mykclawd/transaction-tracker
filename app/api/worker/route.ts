@@ -36,7 +36,7 @@ async function extractTransactionsFromFrames(frames: string[]): Promise<Transact
   }
 
   const response = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: "gpt-4o-mini",
     messages: [
       {
         role: "system",
@@ -169,7 +169,7 @@ If you see dates in other formats, convert to MM/DD/YYYY.`,
 // Legacy: extract from full video
 async function extractTransactionsFromVideo(base64Video: string): Promise<Transaction[]> {
   const response = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: "gpt-4o-mini",
     messages: [
       {
         role: "system",
