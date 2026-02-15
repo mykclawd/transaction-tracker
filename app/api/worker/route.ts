@@ -388,7 +388,35 @@ export async function POST() {
 
 async function handleWorker() {
   try {
-    // Get pending jobs (claim them immediately to prevent double-processing)
+    // THROTTLE: Check if another job is currently processing
+    // Allow if the processing job is stuck (>5 min old) - reset it to pending
+    const processingCheck = await pool.query(
+      `SELECT id, created_at FROM jobs 
+       WHERE status = 'processing' 
+       LIMIT 1`
+    );
+    
+    if (processingCheck.rows.length > 0) {
+      const processingJob = processingCheck.rows[0];
+      const createdAt = new Date(processingJob.created_at);
+      const now = new Date();
+      const ageMinutes = (now.getTime() - createdAt.getTime()) / 1000 / 60;
+      
+      if (ageMinutes < 5) {
+        // Another job is actively processing, skip this invocation
+        console.log(`⏳ Throttled: Job ${processingJob.id} is still processing (${ageMinutes.toFixed(1)} min)`);
+        return Response.json({ message: "Another job is processing, throttled" });
+      } else {
+        // Job is stuck, reset it to pending so it can be retried
+        console.log(`🔄 Resetting stuck job ${processingJob.id} (${ageMinutes.toFixed(1)} min old)`);
+        await pool.query(
+          `UPDATE jobs SET status = 'pending' WHERE id = $1`,
+          [processingJob.id]
+        );
+      }
+    }
+
+    // Get next pending job (claim it immediately)
     const result = await pool.query(
       `UPDATE jobs 
        SET status = 'processing'

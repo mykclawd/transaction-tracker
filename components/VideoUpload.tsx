@@ -187,37 +187,38 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     return chunks;
   };
 
-  // Process a single batch directly (no job queue)
-  const processBatchDirect = async (frames: string[], batchNum: number, totalBatches: number): Promise<{ transactionsCreated: number }> => {
-    const payload = JSON.stringify({ frames });
-    
-    const response = await fetch("/api/process-batch", {
+  // Submit a batch as a job
+  const submitBatch = async (frames: string[]): Promise<string> => {
+    const response = await fetch("/api/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: payload,
+      body: JSON.stringify({ frames }),
     });
 
     if (!response.ok) {
-      let errorMessage = `Batch ${batchNum} failed`;
-      try {
-        const errorData = await response.json();
-        errorMessage = `Batch ${batchNum}: ${errorData.error || response.statusText}`;
-      } catch {
-        errorMessage = `Batch ${batchNum}: ${response.status} ${response.statusText}`;
-      }
-      throw new Error(errorMessage);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Failed to submit batch: ${response.status}`);
     }
 
+    const { jobId } = await response.json();
+    return jobId;
+  };
+
+  // Trigger worker and check job status
+  const checkJobStatus = async (jobId: string): Promise<{ status: string; result?: any; error?: string }> => {
+    // Trigger worker to process jobs
+    await fetch("/api/worker", { method: "POST" }).catch(() => {});
+    
+    // Check job status
+    const response = await fetch(`/api/jobs/${jobId}`);
+    if (!response.ok) throw new Error("Failed to check job status");
     return response.json();
   };
 
   // Wait for a job to complete
   const waitForJob = async (jobId: string): Promise<any> => {
     while (true) {
-      const response = await fetch(`/api/jobs/${jobId}`);
-      if (!response.ok) throw new Error("Failed to fetch job status");
-      
-      const data = await response.json();
+      const data = await checkJobStatus(jobId);
       
       if (data.status === "completed") {
         return data.result;
@@ -226,7 +227,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       }
       
       // Wait before polling again
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 3000));
     }
   };
 
@@ -247,32 +248,40 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       const totalBatches = batches.length;
       
       setStepInfo({ 
-        step: "processing", 
+        step: "uploading", 
         progress: 30, 
-        message: `Processing ${totalBatches} batch${totalBatches > 1 ? 'es' : ''} sequentially...` 
+        message: `Submitting ${totalBatches} batch${totalBatches > 1 ? 'es' : ''} to queue...` 
       });
       
-      // Process batches one at a time with delay between each
-      let totalTransactions = 0;
+      // Submit all batches to the job queue
+      const jobIds: string[] = [];
       for (let i = 0; i < batches.length; i++) {
+        const jobId = await submitBatch(batches[i]);
+        jobIds.push(jobId);
+        setStepInfo({ 
+          step: "uploading", 
+          progress: 30 + Math.round(((i + 1) / totalBatches) * 15), 
+          message: `Queued batch ${i + 1} of ${totalBatches}...` 
+        });
+      }
+      
+      setStepInfo({ 
+        step: "processing", 
+        progress: 50, 
+        message: `All ${totalBatches} batches queued! Processing one at a time... You can close this page and check back later.` 
+      });
+      
+      // Wait for all jobs to complete (user can leave, results will be on dashboard)
+      let totalTransactions = 0;
+      for (let i = 0; i < jobIds.length; i++) {
         setStepInfo({ 
           step: "processing", 
-          progress: 30 + Math.round(((i + 1) / totalBatches) * 65), 
-          message: `Processing batch ${i + 1} of ${totalBatches}... (this may take a minute per batch)` 
+          progress: 50 + Math.round(((i + 1) / jobIds.length) * 45), 
+          message: `Waiting for batch ${i + 1} of ${totalBatches}... You can close this page.` 
         });
         
-        const result = await processBatchDirect(batches[i], i + 1, totalBatches);
-        totalTransactions += result.transactionsCreated || 0;
-        
-        // Wait 3 seconds between batches to avoid rate limits
-        if (i < batches.length - 1) {
-          setStepInfo({ 
-            step: "processing", 
-            progress: 30 + Math.round(((i + 1) / totalBatches) * 65), 
-            message: `Batch ${i + 1} done (+${result.transactionsCreated}). Waiting before next batch...` 
-          });
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        }
+        const result = await waitForJob(jobIds[i]);
+        totalTransactions += result?.added || result?.transactionsCreated || 0;
       }
       
       // All batches complete
