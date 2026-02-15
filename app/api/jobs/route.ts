@@ -40,13 +40,14 @@ export async function POST(request: Request) {
       const baseUrl = origin ? `${protocol}://${origin.replace(/^https?:\/\//, '')}` : '';
       
       if (baseUrl) {
+        // Fire and forget - don't await to avoid blocking response
         fetch(`${baseUrl}/api/worker`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-        }).catch(() => {}); // Fire and forget
+        }).catch((e) => console.error('Worker trigger failed:', e));
       }
-    } catch {
-      // Ignore worker trigger errors - cron will pick it up
+    } catch (e) {
+      console.error('Worker trigger error:', e);
     }
 
     return NextResponse.json({

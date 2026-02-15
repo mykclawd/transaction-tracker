@@ -59,9 +59,11 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         );
         setBackgroundJobs(activeJobs);
         
-        // Trigger worker if there are pending jobs
-        if (activeJobs.length > 0) {
+        // Trigger worker if there are pending jobs - use multiple triggers to ensure processing starts
+        if (activeJobs.filter((j: BackgroundJob) => j.status === 'pending').length > 0) {
+          // Trigger 2 workers to process pending jobs (Vercel Pro allows 2 concurrent)
           fetch("/api/worker", { method: "POST" }).catch(() => {});
+          setTimeout(() => fetch("/api/worker", { method: "POST" }).catch(() => {}), 500);
         }
         
         // Refresh transactions when jobs complete
@@ -337,11 +339,20 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         canLeave: true
       });
       
-      // Trigger multiple workers immediately (parallel processing)
-      const workerTriggers = Array(Math.min(totalBatches, 3)).fill(null).map(() => 
-        fetch("/api/worker", { method: "POST" }).catch(() => {})
-      );
-      await Promise.all(workerTriggers);
+      // Trigger workers - fire multiple to ensure at least one wakes up
+      // Vercel Pro allows concurrent, so this will process 2 jobs at once
+      const triggerWorker = async () => {
+        try {
+          const res = await fetch("/api/worker", { method: "POST" });
+          if (!res.ok) console.error('Worker trigger failed:', res.status);
+          return res;
+        } catch (e) {
+          console.error('Worker trigger error:', e);
+        }
+      };
+      
+      // Fire 3 triggers in parallel - at least one should succeed
+      await Promise.all([triggerWorker(), triggerWorker(), triggerWorker()]);
       
       // Refresh background jobs list
       fetchBackgroundJobs();
