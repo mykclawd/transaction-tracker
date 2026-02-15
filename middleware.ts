@@ -5,6 +5,7 @@ const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/api/webhooks/clerk",
+  "/api/worker",  // Background job processor (needs to be public for cron)
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
