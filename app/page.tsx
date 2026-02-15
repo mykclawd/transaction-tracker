@@ -124,7 +124,7 @@ export default function Dashboard() {
           <CardHeader className="pb-2">
             <CardDescription>Total BTC Rewards (USDC)</CardDescription>
             <CardTitle className="text-3xl">
-              {transactions.reduce((sum, t) => sum + (Number(t.bitcoin_rewards) || 0), 0).toFixed(8)} USDC
+              ${transactions.reduce((sum, t) => sum + (Number(t.bitcoin_rewards) || 0), 0).toFixed(2)}
             </CardTitle>
           </CardHeader>
         </Card>

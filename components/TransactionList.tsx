@@ -101,7 +101,7 @@ export function TransactionList({
               <TableHead>Merchant</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Amount</TableHead>
-              <TableHead>BTC Rewards (USDC)</TableHead>
+              <TableHead>BTC Rewards</TableHead>
               <TableHead>Category</TableHead>
               <TableHead className="w-10"></TableHead>
             </TableRow>
@@ -125,8 +125,8 @@ export function TransactionList({
                   <TableCell className="text-right">
                     ${(Number(transaction.amount_spent) || 0).toFixed(2)}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-xs">
-                    {(Number(transaction.bitcoin_rewards) || 0).toFixed(8)}
+                  <TableCell className="text-right">
+                    ${(Number(transaction.bitcoin_rewards) || 0).toFixed(2)}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
