@@ -94,7 +94,7 @@ export function CategoryBreakdown({ transactions }: CategoryBreakdownProps) {
               </Pie>
               <Tooltip
                 formatter={(value, name) => [
-                  typeof value === 'number' ? `$${value.toFixed(2)}` : value,
+                  typeof value === 'number' ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : value,
                   name,
                 ]}
                 contentStyle={{ borderRadius: "8px" }}
@@ -126,7 +126,7 @@ export function CategoryBreakdown({ transactions }: CategoryBreakdownProps) {
                   {(Number(item.percentage) || 0).toFixed(1)}%
                 </span>
                 <span className="font-medium">
-                  ${(Number(item.value) || 0).toFixed(2)}
+                  ${(Number(item.value) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             </div>

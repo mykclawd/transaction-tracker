@@ -59,8 +59,8 @@ export function MonthlySpending({ transactions }: MonthlySpendingProps) {
               />
               <Tooltip
                 formatter={(value, name) => {
-                  if (name === "total") return [typeof value === 'number' ? `$${value.toFixed(2)}` : value, "Spent"];
-                  if (name === "btcRewards") return [typeof value === 'number' ? `$${value.toFixed(2)}` : value, "BTC Rewards"];
+                  if (name === "total") return [typeof value === 'number' ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : value, "Spent"];
+                  if (name === "btcRewards") return [typeof value === 'number' ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : value, "BTC Rewards"];
                   return [value, name];
                 }}
                 contentStyle={{ borderRadius: "8px" }}
@@ -79,7 +79,7 @@ export function MonthlySpending({ transactions }: MonthlySpendingProps) {
               <CardContent className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm text-zinc-500">Total Spent</span>
-                  <span className="font-medium">${(Number(month.total) || 0).toFixed(2)}</span>
+                  <span className="font-medium">${(Number(month.total) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-zinc-500">Transactions</span>
@@ -88,13 +88,13 @@ export function MonthlySpending({ transactions }: MonthlySpendingProps) {
                 <div className="flex justify-between">
                   <span className="text-sm text-zinc-500">BTC Rewards</span>
                   <span className="font-medium">
-                    ${(Number(month.btcRewards) || 0).toFixed(2)}
+                    ${(Number(month.btcRewards) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-zinc-500">Avg per Transaction</span>
                   <span className="font-medium">
-                    ${month.count > 0 ? ((Number(month.total) || 0) / month.count).toFixed(2) : "0.00"}
+                    ${month.count > 0 ? ((Number(month.total) || 0) / month.count).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00"}
                   </span>
                 </div>
               </CardContent>

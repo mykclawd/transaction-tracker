@@ -123,10 +123,10 @@ export function TransactionList({
                     {new Date(transaction.transaction_date).toLocaleDateString()}
                   </TableCell>
                   <TableCell className="text-right">
-                    ${(Number(transaction.amount_spent) || 0).toFixed(2)}
+                    ${(Number(transaction.amount_spent) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </TableCell>
                   <TableCell className="text-right">
-                    ${(Number(transaction.bitcoin_rewards) || 0).toFixed(2)}
+                    ${(Number(transaction.bitcoin_rewards) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
