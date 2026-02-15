@@ -33,15 +33,18 @@ export async function POST(request: Request) {
     const jobId = result.rows[0].id;
 
     // Trigger the worker immediately (don't wait for cron)
+    // Use the request origin to call the same deployment
     try {
-      const baseUrl = process.env.VERCEL_URL 
-        ? `https://${process.env.VERCEL_URL}` 
-        : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const origin = request.headers.get('origin') || request.headers.get('host');
+      const protocol = origin?.includes('localhost') ? 'http' : 'https';
+      const baseUrl = origin ? `${protocol}://${origin.replace(/^https?:\/\//, '')}` : '';
       
-      fetch(`${baseUrl}/api/worker`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      }).catch(() => {}); // Fire and forget
+      if (baseUrl) {
+        fetch(`${baseUrl}/api/worker`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }).catch(() => {}); // Fire and forget
+      }
     } catch {
       // Ignore worker trigger errors - cron will pick it up
     }
