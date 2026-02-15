@@ -182,9 +182,9 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         canvas.width = Math.round(video.videoWidth * scale);
         canvas.height = Math.round(video.videoHeight * scale);
 
-        // Extract 1 frame every 1 second for better coverage
+        // Extract 2 frames every second for better coverage (catch fast scrolling)
         // No cap - we'll send frames in batches to stay under payload limits
-        const frameInterval = 1; // 1 frame every 1 second
+        const frameInterval = 0.5; // 1 frame every 0.5 seconds
         const frameCount = Math.ceil(duration / frameInterval);
         const frames: string[] = [];
 
@@ -290,8 +290,8 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       setStepInfo({ step: "extracting", progress: 5, message: "Loading video...", canLeave: false });
       const frames = await extractFrames(file);
       
-      // Step 2: Chunk frames into batches
-      const BATCH_SIZE = 15;
+      // Step 2: Chunk frames into batches (smaller batches for higher frame rate)
+      const BATCH_SIZE = 10; // Reduced from 15 to handle 2x frame rate
       const batches = chunkArray(frames, BATCH_SIZE);
       const totalBatches = batches.length;
       

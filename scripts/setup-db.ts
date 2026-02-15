@@ -20,6 +20,25 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date);
 CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category);
+
+CREATE TABLE IF NOT EXISTS jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'video_extract',
+  payload JSONB NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  result JSONB,
+  error TEXT,
+  retry_count INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  started_at TIMESTAMP WITH TIME ZONE,
+  completed_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs(user_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
 `;
 
 async function setup() {

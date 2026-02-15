@@ -11,8 +11,8 @@ const placesApiKey = process.env.GOOGLE_PLACES_API_KEY;
 // Retry helper for rate limit errors
 async function withRetry<T>(
   fn: () => Promise<T>,
-  maxRetries: number = 3,
-  baseDelayMs: number = 3000  // Start with 3 seconds
+  maxRetries: number = 5,
+  baseDelayMs: number = 2000  // Start with 2 seconds, more retries
 ): Promise<T> {
   let lastError: Error | null = null;
   
@@ -51,11 +51,14 @@ interface Transaction {
 }
 
 async function extractTransactionsFromFrames(frames: string[]): Promise<Transaction[]> {
+  console.log(`🔍 Extracting from ${frames.length} frames...`);
+  const startTime = Date.now();
+  
   // Build content array with all frames
   const content: any[] = [
     {
       type: "text",
-      text: "Extract all credit card transactions visible in these video frames. Ignore any pending transactions. Return ONLY a valid JSON array.",
+      text: `Extract ALL credit card transactions visible in these ${frames.length} video frames. Count carefully and extract every single one.`,
     },
   ];
 
@@ -76,30 +79,31 @@ async function extractTransactionsFromFrames(frames: string[]): Promise<Transact
     messages: [
       {
         role: "system",
-        content: `You are a transaction extraction specialist. Analyze images showing credit card transactions and extract:
-- merchant_name (string)
-- transaction_date (format MM/DD/YYYY or similar)
-- amount_spent (number, parse the dollar amount)
-- bitcoin_rewards (number, parse the BTC Rewards amount shown in USDC, default to 0 if not shown)
+        content: `You are a transaction extraction specialist. Analyze images showing credit card transactions and extract EVERY SINGLE TRANSACTION visible.
 
-IMPORTANT:
-- IGNORE any transactions marked as "pending" or "Pending"
-- IGNORE any "Payment made" or "Payment received" entries (these are credit card payments, not purchases)
-- Deduplicate: if you see the same transaction in multiple frames, only include it ONCE
-- Look for completed/posted transactions only
-- The "BTC Rewards" amount shown is denominated in USDC, not actual BTC
+Extract these fields for each transaction:
+- merchant_name (string) - the business name
+- transaction_date (format MM/DD/YYYY) - convert any date format to MM/DD/YYYY
+- amount_spent (number) - the dollar amount spent
+- bitcoin_rewards (number) - the USDC value shown in the "BTC Rewards" column (NOT the BTC amount, but the USDC equivalent shown)
 
-Return ONLY a valid JSON array of transactions. Example:
+CRITICAL RULES:
+1. EXTRACT EVERY TRANSACTION YOU SEE - do not skip any
+2. IGNORE any transactions marked as "pending" or "Pending"
+3. IGNORE "Payment made" or "Payment received" entries (these are credit card payments, not purchases)
+4. Deduplicate: if the same transaction appears in multiple frames, include it ONCE
+5. Look for completed/posted transactions only
+6. The "BTC Rewards" column shows a USDC value (e.g., "$1.23" or "1.23") - extract just the number
+
+Return ONLY a valid JSON array. Example:
 [
   {
     "merchant_name": "Starbucks",
     "transaction_date": "01/15/2024",
     "amount_spent": 5.67,
-    "bitcoin_rewards": 0.00000123
+    "bitcoin_rewards": 1.23
   }
-]
-
-If you see dates in other formats, convert to MM/DD/YYYY.`,
+]`,
       },
       {
         role: "user",
@@ -144,7 +148,9 @@ If you see dates in other formats, convert to MM/DD/YYYY.`,
   
   // Step 3: Try to parse, and if it fails due to truncation, try to fix it
   try {
-    return JSON.parse(jsonStr) as Transaction[];
+    const parsed = JSON.parse(jsonStr) as Transaction[];
+    console.log(`✅ Parsed ${parsed.length} transactions in ${Date.now() - startTime}ms`);
+    return parsed;
   } catch (parseErr) {
     console.log("Initial parse failed, attempting to fix truncated JSON...");
     
@@ -277,9 +283,9 @@ async function processJob(job: any) {
   const { id, user_id, payload } = job;
   
   try {
-    // Update status to processing
+    // Update status to processing with start time
     await pool.query(
-      "UPDATE jobs SET status = 'processing' WHERE id = $1",
+      "UPDATE jobs SET status = 'processing', started_at = NOW() WHERE id = $1",
       [id]
     );
 
@@ -363,13 +369,22 @@ async function processJob(job: any) {
       }
     }
 
-    // Update job as completed
+    // Calculate total bitcoin rewards from this batch
+    const totalRewards = rawTransactions.reduce((sum, t) => sum + (Number(t.bitcoin_rewards) || 0), 0);
+    
+    // Update job as completed with detailed metrics
     await pool.query(
       `UPDATE jobs SET status = 'completed', result = $1, completed_at = NOW() WHERE id = $2`,
-      [JSON.stringify({ transactions: rawTransactions, added, duplicates }), id]
+      [JSON.stringify({ 
+        transactions: rawTransactions, 
+        added, 
+        duplicates,
+        extractionCount: rawTransactions.length,
+        totalBitcoinRewards: totalRewards
+      }), id]
     );
 
-    console.log(`✅ Job ${id} completed: ${added} added, ${duplicates} duplicates`);
+    console.log(`✅ Job ${id} completed: ${added} added, ${duplicates} duplicates, $${totalRewards.toFixed(2)} in BTC rewards`);
   } catch (error: any) {
     console.error(`❌ Job ${id} failed:`, error.message);
     await pool.query(
@@ -389,6 +404,26 @@ export async function POST() {
 
 async function handleWorker() {
   try {
+    // Auto-retry failed jobs (max 2 retries)
+    const failedResult = await pool.query(
+      `UPDATE jobs 
+       SET status = 'pending', 
+           retry_count = COALESCE(retry_count, 0) + 1,
+           updated_at = NOW()
+       WHERE id IN (
+         SELECT id FROM jobs 
+         WHERE status = 'failed' 
+         AND COALESCE(retry_count, 0) < 2
+         ORDER BY created_at ASC 
+         LIMIT 1
+       )
+       RETURNING id, retry_count`
+    );
+    
+    if (failedResult.rows.length > 0) {
+      console.log(`🔄 Retrying failed job ${failedResult.rows[0].id} (attempt ${failedResult.rows[0].retry_count})`);
+    }
+
     // THROTTLE: Check if another job is currently processing
     // Allow if the processing job is stuck (>5 min old) - reset it to pending
     const processingCheck = await pool.query(

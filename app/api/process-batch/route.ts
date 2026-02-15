@@ -19,7 +19,7 @@ interface Transaction {
 async function withRetry<T>(
   fn: () => Promise<T>,
   maxRetries: number = 5,
-  baseDelayMs: number = 3000
+  baseDelayMs: number = 2000
 ): Promise<T> {
   let lastError: Error | null = null;
   
@@ -71,20 +71,23 @@ async function extractTransactionsFromFrames(frames: string[]): Promise<Transact
     messages: [
       {
         role: "system",
-        content: `You are a transaction extraction specialist. Analyze images showing credit card transactions and extract:
-- merchant_name (string)
-- transaction_date (format MM/DD/YYYY)
-- amount_spent (number)
-- bitcoin_rewards (number, the BTC Rewards shown in USDC, default 0)
+        content: `You are a transaction extraction specialist. Analyze images showing credit card transactions and extract EVERY SINGLE TRANSACTION visible.
 
-IMPORTANT:
-- IGNORE "pending" transactions
-- IGNORE "Payment made" or "Payment received" entries
-- Deduplicate: same transaction in multiple frames = include ONCE
-- BTC Rewards is in USDC, not actual BTC
+Extract these fields for each transaction:
+- merchant_name (string) - the business name
+- transaction_date (format MM/DD/YYYY) - convert any date format
+- amount_spent (number) - the dollar amount spent
+- bitcoin_rewards (number) - the USDC value in the "BTC Rewards" column (NOT BTC amount, but the USDC equivalent shown)
+
+CRITICAL RULES:
+1. EXTRACT EVERY TRANSACTION YOU SEE - do not skip any
+2. IGNORE any transactions marked as "pending" or "Pending"
+3. IGNORE "Payment made" or "Payment received" entries
+4. Deduplicate: same transaction in multiple frames = include ONCE
+5. BTC Rewards column shows USDC value (e.g., "$1.23") - extract the number
 
 Return ONLY a valid JSON array. Example:
-[{"merchant_name": "Starbucks", "transaction_date": "01/15/2024", "amount_spent": 5.67, "bitcoin_rewards": 0.17}]`,
+[{"merchant_name": "Starbucks", "transaction_date": "01/15/2024", "amount_spent": 5.67, "bitcoin_rewards": 1.23}]`,
       },
       {
         role: "user",
