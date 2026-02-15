@@ -67,7 +67,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
             clearInterval(pollIntervalRef.current);
           }
         } else if (data.status === "processing") {
-          setStepInfo({ step: "processing", progress: 75, message: "AI analyzing transactions..." });
+          setStepInfo({ step: "processing", progress: 75, message: "AI analyzing transactions... this can take a few minutes. You can leave and come back later." });
         }
       } catch (err) {
         console.error("Polling error:", err);
@@ -220,7 +220,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       setJobId(data.jobId);
       
       // Step 3: Processing
-      setStepInfo({ step: "processing", progress: 50, message: "AI analyzing transactions..." });
+      setStepInfo({ step: "processing", progress: 50, message: "AI analyzing transactions... this can take a few minutes. You can leave and come back later." });
       
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
@@ -269,7 +269,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* File Input */}
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
           <input
             ref={inputRef}
             type="file"
@@ -313,7 +313,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
             )}
           </label>
           {file && (
-            <Button onClick={handleUpload} disabled={isProcessing}>
+            <Button onClick={handleUpload} disabled={isProcessing} className="w-full sm:w-auto">
               {isProcessing ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
