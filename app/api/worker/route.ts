@@ -77,12 +77,49 @@ If you see dates in other formats, convert to MM/DD/YYYY.`,
     throw new Error("No response from OpenAI");
   }
 
+  // Log the raw response for debugging
+  console.log("OpenAI response (first 500 chars):", responseContent.substring(0, 500));
+
+  // Try to extract JSON array - handle various formats
+  let jsonStr: string | null = null;
+  
+  // Try 1: Direct JSON array match
   const jsonMatch = responseContent.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) {
-    throw new Error("Could not parse transactions from response");
+  if (jsonMatch) {
+    jsonStr = jsonMatch[0];
+  }
+  
+  // Try 2: Extract from markdown code block
+  if (!jsonStr) {
+    const codeBlockMatch = responseContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      const innerMatch = codeBlockMatch[1].match(/\[[\s\S]*\]/);
+      if (innerMatch) {
+        jsonStr = innerMatch[0];
+      }
+    }
+  }
+  
+  // Try 3: Check if response indicates no transactions
+  if (!jsonStr) {
+    const lowerContent = responseContent.toLowerCase();
+    if (lowerContent.includes("no transaction") || lowerContent.includes("empty") || lowerContent.includes("[]")) {
+      console.log("No transactions found in frames");
+      return [];
+    }
   }
 
-  return JSON.parse(jsonMatch[0]) as Transaction[];
+  if (!jsonStr) {
+    console.error("Failed to parse response:", responseContent);
+    throw new Error("Could not parse transactions from response: " + responseContent.substring(0, 200));
+  }
+
+  try {
+    return JSON.parse(jsonStr) as Transaction[];
+  } catch (parseErr) {
+    console.error("JSON parse error:", parseErr, "JSON string:", jsonStr.substring(0, 200));
+    throw new Error("Invalid JSON in response: " + (parseErr as Error).message);
+  }
 }
 
 // Legacy: extract from full video
@@ -127,12 +164,33 @@ Return ONLY a valid JSON array of transactions.`,
     throw new Error("No response from OpenAI");
   }
 
+  // Try to extract JSON array - handle various formats
+  let jsonStr: string | null = null;
+  
   const jsonMatch = content.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) {
-    throw new Error("Could not parse transactions from response");
+  if (jsonMatch) {
+    jsonStr = jsonMatch[0];
+  }
+  
+  if (!jsonStr) {
+    const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      const innerMatch = codeBlockMatch[1].match(/\[[\s\S]*\]/);
+      if (innerMatch) {
+        jsonStr = innerMatch[0];
+      }
+    }
+  }
+  
+  if (!jsonStr) {
+    const lowerContent = content.toLowerCase();
+    if (lowerContent.includes("no transaction") || lowerContent.includes("empty")) {
+      return [];
+    }
+    throw new Error("Could not parse transactions from response: " + content.substring(0, 200));
   }
 
-  return JSON.parse(jsonMatch[0]) as Transaction[];
+  return JSON.parse(jsonStr) as Transaction[];
 }
 
 async function processJob(job: any) {
