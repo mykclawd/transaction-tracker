@@ -1,5 +1,5 @@
-import { pool, generateTransactionId, parseTransactionDate, getUserMerchantCategory } from "@/lib/db";
-import { getMerchantCategory } from "@/lib/places";
+import { pool, generateTransactionId, parseTransactionDate, getUserMerchantCategory, getGlobalMerchantCategory, setGlobalMerchantCategory } from "@/lib/db";
+import { getMerchantCategory, categorizeByCommonName } from "@/lib/places";
 import OpenAI from "openai";
 
 const openai = new OpenAI({
@@ -174,12 +174,30 @@ async function processJob(job: any) {
         t.bitcoin_rewards || 0
       );
 
-      // Check for user-specific category override first
+      // Check for user-specific category override first (user's personal preference)
       let category = await getUserMerchantCategory(user_id, t.merchant_name);
       
-      // If no override, try auto-categorization with Google Places
+      // If no user override, check global cache (avoid API calls for known merchants)
+      if (!category) {
+        category = await getGlobalMerchantCategory(t.merchant_name);
+      }
+      
+      // If no cache, try common name mapping (fast, no API call)
+      if (!category) {
+        category = categorizeByCommonName(t.merchant_name);
+        if (category) {
+          // Cache the common name result globally
+          await setGlobalMerchantCategory(t.merchant_name, category, 'common_name');
+        }
+      }
+      
+      // If still no category, call Google Places API and cache result
       if (!category && placesApiKey) {
         category = await getMerchantCategory(t.merchant_name, placesApiKey);
+        if (category) {
+          // Cache the Google Places result globally for future use
+          await setGlobalMerchantCategory(t.merchant_name, category, 'google_places');
+        }
       }
 
       try {

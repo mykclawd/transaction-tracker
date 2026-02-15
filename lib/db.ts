@@ -127,3 +127,30 @@ export async function deleteUserMerchantCategory(
     [userId, merchantName]
   );
 }
+
+// Get global/default category for a merchant (Google Places cache)
+export async function getGlobalMerchantCategory(
+  merchantName: string
+): Promise<string | null> {
+  const result = await pool.query(
+    `SELECT category FROM merchant_categories 
+     WHERE LOWER(merchant_name) = LOWER($1)`,
+    [merchantName]
+  );
+  return result.rows[0]?.category || null;
+}
+
+// Set global/default category for a merchant (Google Places cache)
+export async function setGlobalMerchantCategory(
+  merchantName: string,
+  category: string,
+  source: 'google_places' | 'common_name' = 'google_places'
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO merchant_categories (merchant_name, category, source, updated_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (merchant_name) 
+     DO UPDATE SET category = $2, source = $3, updated_at = NOW()`,
+    [merchantName, category, source]
+  );
+}
