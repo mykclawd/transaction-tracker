@@ -134,10 +134,10 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         canvas.width = Math.round(video.videoWidth * scale);
         canvas.height = Math.round(video.videoHeight * scale);
 
-        // Extract fewer frames (max 12) to stay under payload limits
-        // 12 frames at ~100KB each = ~1.2MB total (safe for Vercel's 4.5MB limit)
-        const frameInterval = Math.max(3, duration / 12);
-        const frameCount = Math.min(12, Math.ceil(duration / frameInterval));
+        // Extract 1 frame every 2 seconds for better coverage
+        // Cap at 30 frames to stay under Vercel's 4.5MB payload limit
+        const frameInterval = 2; // 1 frame every 2 seconds
+        const frameCount = Math.min(30, Math.ceil(duration / frameInterval));
         const frames: string[] = [];
 
         const captureFrame = (time: number): Promise<string> => {
