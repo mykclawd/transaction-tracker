@@ -249,31 +249,26 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       setStepInfo({ 
         step: "uploading", 
         progress: 30, 
-        message: `Processing ${frames.length} frames in ${totalBatches} batch${totalBatches > 1 ? 'es' : ''}...` 
+        message: `Uploading ${frames.length} frames in ${totalBatches} batch${totalBatches > 1 ? 'es' : ''}...` 
       });
       
-      let totalTransactions = 0;
-      let lastJobId = "";
+      // Create all jobs in parallel
+      const jobPromises = batches.map((batch, i) => processBatch(batch, i + 1, totalBatches));
+      const jobs = await Promise.all(jobPromises);
       
-      // Process batches sequentially
-      for (let i = 0; i < batches.length; i++) {
-        const batch = batches[i];
-        const batchProgress = 30 + Math.round((i / totalBatches) * 50);
-        
-        setStepInfo({ 
-          step: "processing", 
-          progress: batchProgress, 
-          message: `Processing batch ${i + 1} of ${totalBatches} (${batch.length} frames)... this can take a few minutes. You can leave and come back later.` 
-        });
-        
-        // Create job for this batch
-        const { jobId } = await processBatch(batch, i + 1, totalBatches);
-        lastJobId = jobId;
-        
-        // Wait for this batch to complete
-        const result = await waitForJob(jobId);
-        totalTransactions += result?.transactionsCreated || 0;
-      }
+      setStepInfo({ 
+        step: "processing", 
+        progress: 50, 
+        message: `AI analyzing ${totalBatches} batch${totalBatches > 1 ? 'es' : ''} in parallel... this can take a few minutes. You can leave and come back later.` 
+      });
+      
+      // Wait for all jobs to complete in parallel
+      const resultPromises = jobs.map(({ jobId }) => waitForJob(jobId));
+      const results = await Promise.all(resultPromises);
+      
+      // Aggregate results
+      const totalTransactions = results.reduce((sum, r) => sum + (r?.transactionsCreated || 0), 0);
+      const lastJobId = jobs[jobs.length - 1]?.jobId || "";
       
       // All batches complete
       setJobId(lastJobId);
