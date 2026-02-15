@@ -76,7 +76,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
 
   useEffect(() => {
     fetchBackgroundJobs();
-    backgroundPollRef.current = setInterval(fetchBackgroundJobs, 3000);
+    backgroundPollRef.current = setInterval(fetchBackgroundJobs, 1500); // Poll faster for Pro
     return () => {
       if (backgroundPollRef.current) {
         clearInterval(backgroundPollRef.current);
@@ -193,8 +193,8 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
             video.currentTime = time;
             video.onseeked = () => {
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-              // Use JPEG with 60% quality to reduce size (still readable for text)
-              const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+              // Use JPEG with 50% quality - still readable for text, smaller payload
+              const dataUrl = canvas.toDataURL("image/jpeg", 0.5);
               res(dataUrl);
             };
           });
@@ -290,38 +290,47 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       setStepInfo({ step: "extracting", progress: 5, message: "Loading video...", canLeave: false });
       const frames = await extractFrames(file);
       
-      // Step 2: Chunk frames into batches (smaller batches for higher frame rate)
-      const BATCH_SIZE = 10; // Reduced from 15 to handle 2x frame rate
+      // Step 2: Chunk frames into batches (larger batches for Pro plan)
+      const BATCH_SIZE = 20; // Increased for Pro - fewer API calls, faster queueing
       const batches = chunkArray(frames, BATCH_SIZE);
       const totalBatches = batches.length;
       
       setStepInfo({ 
         step: "uploading", 
         progress: 30, 
-        message: `Submitting ${totalBatches} batch${totalBatches > 1 ? 'es' : ''} to queue...`,
+        message: `Submitting ${totalBatches} batch${totalBatches > 1 ? 'es' : ''} in parallel...`,
         canLeave: false
       });
       
-      // Submit all batches to the job queue
-      const jobIds: string[] = [];
-      for (let i = 0; i < batches.length; i++) {
-        const jobId = await submitBatch(batches[i]);
-        jobIds.push(jobId);
-        setStepInfo({ 
-          step: "uploading", 
-          progress: 30 + Math.round(((i + 1) / totalBatches) * 15), 
-          message: `Queued batch ${i + 1} of ${totalBatches}...`,
-          canLeave: false
-        });
-      }
+      // Submit all batches IN PARALLEL for speed
+      const submitPromises = batches.map((batch, i) => 
+        submitBatch(batch).then(jobId => {
+          setStepInfo({ 
+            step: "uploading", 
+            progress: 30 + Math.round(((i + 1) / totalBatches) * 15), 
+            message: `Queued ${i + 1}/${totalBatches} batches...`,
+            canLeave: false
+          });
+          return jobId;
+        })
+      );
       
-      // All batches queued - user can now leave!
+      // Wait for all submissions to complete
+      const jobIds = await Promise.all(submitPromises);
+      
+      // All batches queued - trigger workers immediately!
       setStepInfo({ 
         step: "processing", 
         progress: 50, 
-        message: `✅ All ${totalBatches} batches queued! Processing in background...`,
+        message: `✅ All ${totalBatches} batches queued! Starting workers...`,
         canLeave: true
       });
+      
+      // Trigger multiple workers immediately (parallel processing)
+      const workerTriggers = Array(Math.min(totalBatches, 3)).fill(null).map(() => 
+        fetch("/api/worker", { method: "POST" }).catch(() => {})
+      );
+      await Promise.all(workerTriggers);
       
       // Refresh background jobs list
       fetchBackgroundJobs();
