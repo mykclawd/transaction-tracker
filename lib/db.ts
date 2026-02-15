@@ -8,14 +8,17 @@ const pool = new Pool({
 export { pool };
 
 // Helper function to generate deterministic transaction ID
+// NOTE: Does NOT include rewards in hash - deduplication based on merchant+date+amount only
 export function generateTransactionId(
   userId: string,
   merchantName: string,
   date: string,
   amount: number,
-  rewards: number
+  _rewards?: number // kept for backward compatibility but not used in hash
 ): string {
-  const data = `${userId}:${merchantName.toLowerCase().trim()}:${date}:${amount}:${rewards}`;
+  // Hash based on user, merchant, date, and amount only (not rewards)
+  // This prevents duplicates when AI extracts different reward values for same transaction
+  const data = `${userId}:${merchantName.toLowerCase().trim()}:${date}:${amount}`;
   
   // Simple hash function
   let hash = 0;
