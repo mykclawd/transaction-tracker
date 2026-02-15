@@ -32,7 +32,7 @@ export function CategoryBreakdown({ transactions }: CategoryBreakdownProps) {
   // Group by category
   const groupedByCategory = transactions.reduce((acc, t) => {
     const category = t.category || "Uncategorized";
-    acc[category] = (acc[category] || 0) + t.amount_spent;
+    acc[category] = (acc[category] || 0) + (Number(t.amount_spent) || 0);
     return acc;
   }, {} as Record<string, number>);
 
@@ -123,10 +123,10 @@ export function CategoryBreakdown({ transactions }: CategoryBreakdownProps) {
               </div>
               <div className="flex items-center gap-4">
                 <span className="text-zinc-500">
-                  {item.percentage.toFixed(1)}%
+                  {(Number(item.percentage) || 0).toFixed(1)}%
                 </span>
                 <span className="font-medium">
-                  ${item.value.toFixed(2)}
+                  ${(Number(item.value) || 0).toFixed(2)}
                 </span>
               </div>
             </div>

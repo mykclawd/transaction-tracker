@@ -121,10 +121,10 @@ export function TransactionList({
                     {new Date(transaction.transaction_date).toLocaleDateString()}
                   </TableCell>
                   <TableCell className="text-right">
-                    ${transaction.amount_spent.toFixed(2)}
+                    ${(Number(transaction.amount_spent) || 0).toFixed(2)}
                   </TableCell>
                   <TableCell className="text-right font-mono text-xs">
-                    {transaction.bitcoin_rewards.toFixed(8)}
+                    {(Number(transaction.bitcoin_rewards) || 0).toFixed(8)}
                   </TableCell>
                   <TableCell>
                     <Select

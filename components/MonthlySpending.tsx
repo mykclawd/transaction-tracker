@@ -29,9 +29,9 @@ export function MonthlySpending({ transactions }: MonthlySpendingProps) {
     if (!acc[monthKey]) {
       acc[monthKey] = { label: monthLabel, total: 0, count: 0, btcRewards: 0 };
     }
-    acc[monthKey].total += t.amount_spent;
+    acc[monthKey].total += Number(t.amount_spent) || 0;
     acc[monthKey].count += 1;
-    acc[monthKey].btcRewards += t.bitcoin_rewards;
+    acc[monthKey].btcRewards += Number(t.bitcoin_rewards) || 0;
 
     return acc;
   }, {} as Record<string, { label: string; total: number; count: number; btcRewards: number }>);
@@ -79,7 +79,7 @@ export function MonthlySpending({ transactions }: MonthlySpendingProps) {
               <CardContent className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm text-zinc-500">Total Spent</span>
-                  <span className="font-medium">${month.total.toFixed(2)}</span>
+                  <span className="font-medium">${(Number(month.total) || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-zinc-500">Transactions</span>
@@ -88,13 +88,13 @@ export function MonthlySpending({ transactions }: MonthlySpendingProps) {
                 <div className="flex justify-between">
                   <span className="text-sm text-zinc-500">BTC Rewards</span>
                   <span className="font-medium font-mono text-xs">
-                    {month.btcRewards.toFixed(8)}
+                    {(Number(month.btcRewards) || 0).toFixed(8)}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-zinc-500">Avg per Transaction</span>
                   <span className="font-medium">
-                    ${month.count > 0 ? (month.total / month.count).toFixed(2) : "0.00"}
+                    ${month.count > 0 ? ((Number(month.total) || 0) / month.count).toFixed(2) : "0.00"}
                   </span>
                 </div>
               </CardContent>

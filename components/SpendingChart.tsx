@@ -20,7 +20,7 @@ export function SpendingChart({ transactions }: SpendingChartProps) {
   // Group transactions by date and sum amounts
   const groupedByDate = transactions.reduce((acc, t) => {
     const date = t.transaction_date;
-    acc[date] = (acc[date] || 0) + t.amount_spent;
+    acc[date] = (acc[date] || 0) + (Number(t.amount_spent) || 0);
     return acc;
   }, {} as Record<string, number>);
 
