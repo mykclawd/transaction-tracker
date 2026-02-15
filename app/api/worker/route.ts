@@ -48,6 +48,7 @@ async function extractTransactionsFromFrames(frames: string[]): Promise<Transact
 
 IMPORTANT:
 - IGNORE any transactions marked as "pending" or "Pending"
+- IGNORE any "Payment made" or "Payment received" entries (these are credit card payments, not purchases)
 - Deduplicate: if you see the same transaction in multiple frames, only include it ONCE
 - Look for completed/posted transactions only
 - The "BTC Rewards" amount shown is denominated in USDC, not actual BTC
