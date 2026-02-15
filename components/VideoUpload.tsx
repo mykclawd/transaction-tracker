@@ -187,11 +187,11 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     return chunks;
   };
 
-  // Process a single batch of frames
-  const processBatch = async (frames: string[], batchNum: number, totalBatches: number): Promise<{ jobId: string }> => {
+  // Process a single batch directly (no job queue)
+  const processBatchDirect = async (frames: string[], batchNum: number, totalBatches: number): Promise<{ transactionsCreated: number }> => {
     const payload = JSON.stringify({ frames });
     
-    const response = await fetch("/api/jobs", {
+    const response = await fetch("/api/process-batch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: payload,
@@ -209,26 +209,6 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     }
 
     return response.json();
-  };
-
-  // Wait for all jobs to complete (poll sequentially to avoid rate limits)
-  const processBatchesWithLimit = async (
-    jobIds: string[]
-  ): Promise<any[]> => {
-    const results: any[] = [];
-    
-    for (let i = 0; i < jobIds.length; i++) {
-      setStepInfo({
-        step: "processing",
-        progress: 55 + Math.round((i / jobIds.length) * 40),
-        message: `Waiting for batch ${i + 1} of ${jobIds.length}... You can close this page and check back later.`
-      });
-      
-      const result = await waitForJob(jobIds[i]);
-      results.push(result);
-    }
-    
-    return results;
   };
 
   // Wait for a job to complete
@@ -267,37 +247,35 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       const totalBatches = batches.length;
       
       setStepInfo({ 
-        step: "uploading", 
+        step: "processing", 
         progress: 30, 
-        message: `Uploading ${totalBatches} batch${totalBatches > 1 ? 'es' : ''}...` 
+        message: `Processing ${totalBatches} batch${totalBatches > 1 ? 'es' : ''} sequentially...` 
       });
       
-      // Submit ALL batches at once (fire and forget)
-      const jobIds: string[] = [];
+      // Process batches one at a time with delay between each
+      let totalTransactions = 0;
       for (let i = 0; i < batches.length; i++) {
-        const { jobId } = await processBatch(batches[i], i + 1, totalBatches);
-        jobIds.push(jobId);
         setStepInfo({ 
-          step: "uploading", 
-          progress: 30 + Math.round(((i + 1) / totalBatches) * 20), 
-          message: `Uploaded batch ${i + 1} of ${totalBatches}...` 
+          step: "processing", 
+          progress: 30 + Math.round(((i + 1) / totalBatches) * 65), 
+          message: `Processing batch ${i + 1} of ${totalBatches}... (this may take a minute per batch)` 
         });
+        
+        const result = await processBatchDirect(batches[i], i + 1, totalBatches);
+        totalTransactions += result.transactionsCreated || 0;
+        
+        // Wait 3 seconds between batches to avoid rate limits
+        if (i < batches.length - 1) {
+          setStepInfo({ 
+            step: "processing", 
+            progress: 30 + Math.round(((i + 1) / totalBatches) * 65), 
+            message: `Batch ${i + 1} done (+${result.transactionsCreated}). Waiting before next batch...` 
+          });
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
       }
       
-      setStepInfo({ 
-        step: "processing", 
-        progress: 55, 
-        message: `${totalBatches} batch${totalBatches > 1 ? 'es' : ''} queued! You can close this page — check back later for results.` 
-      });
-      
-      // Optional: wait for results if user stays on page
-      const results = await processBatchesWithLimit(batches.map((_, i) => jobIds[i]));
-      
-      // Aggregate results
-      const totalTransactions = results.reduce((sum, r) => sum + (r?.transactionsCreated || 0), 0);
-      
       // All batches complete
-      setJobId(jobIds[jobIds.length - 1] || "");
       setJobResult({ transactionsCreated: totalTransactions });
       setStepInfo({ 
         step: "completed", 
