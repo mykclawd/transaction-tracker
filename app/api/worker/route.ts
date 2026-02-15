@@ -8,11 +8,11 @@ const openai = new OpenAI({
 
 const placesApiKey = process.env.GOOGLE_PLACES_API_KEY;
 
-// Retry helper for rate limit errors
+// Retry helper for rate limit errors - VERY conservative
 async function withRetry<T>(
   fn: () => Promise<T>,
-  maxRetries: number = 3,
-  baseDelayMs: number = 2000
+  maxRetries: number = 5,
+  baseDelayMs: number = 10000  // Start with 10 seconds
 ): Promise<T> {
   let lastError: Error | null = null;
   
@@ -29,8 +29,8 @@ async function withRetry<T>(
                           error?.message?.includes('quota');
       
       if (isRateLimit && attempt < maxRetries - 1) {
-        const delay = baseDelayMs * Math.pow(2, attempt); // Exponential backoff
-        console.log(`Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+        const delay = baseDelayMs * Math.pow(2, attempt); // 10s, 20s, 40s, 80s, 160s
+        console.log(`Rate limited, retrying in ${delay/1000}s (attempt ${attempt + 1}/${maxRetries})...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
@@ -41,6 +41,9 @@ async function withRetry<T>(
   
   throw lastError;
 }
+
+// Global cooldown tracker - wait between jobs
+let lastJobCompletedAt = 0;
 
 interface Transaction {
   merchant_name: string;
@@ -388,6 +391,14 @@ export async function POST() {
 
 async function handleWorker() {
   try {
+    // COOLDOWN: Wait at least 5 seconds between finishing one job and starting another
+    const timeSinceLastJob = Date.now() - lastJobCompletedAt;
+    const cooldownMs = 5000;
+    if (lastJobCompletedAt > 0 && timeSinceLastJob < cooldownMs) {
+      console.log(`⏳ Cooldown: ${((cooldownMs - timeSinceLastJob) / 1000).toFixed(1)}s remaining`);
+      return Response.json({ message: "Cooldown between jobs", waitMs: cooldownMs - timeSinceLastJob });
+    }
+
     // THROTTLE: Check if another job is currently processing
     // Allow if the processing job is stuck (>5 min old) - reset it to pending
     const processingCheck = await pool.query(
@@ -436,6 +447,9 @@ async function handleWorker() {
     // Process the job
     const job = result.rows[0];
     await processJob(job);
+    
+    // Set cooldown timestamp
+    lastJobCompletedAt = Date.now();
 
     return Response.json({ 
       processed: 1,

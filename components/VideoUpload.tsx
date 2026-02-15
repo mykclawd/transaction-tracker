@@ -204,10 +204,16 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     return jobId;
   };
 
+  // Track poll count to avoid calling worker too often
+  let pollCount = 0;
+
   // Trigger worker and check job status
   const checkJobStatus = async (jobId: string): Promise<{ status: string; result?: any; error?: string }> => {
-    // Trigger worker to process jobs
-    await fetch("/api/worker", { method: "POST" }).catch(() => {});
+    // Only trigger worker every 3rd poll to reduce load
+    pollCount++;
+    if (pollCount % 3 === 1) {
+      await fetch("/api/worker", { method: "POST" }).catch(() => {});
+    }
     
     // Check job status
     const response = await fetch(`/api/jobs/${jobId}`);
@@ -226,8 +232,8 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         throw new Error(data.error || "Job failed");
       }
       
-      // Wait before polling again
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Wait 5 seconds before polling again
+      await new Promise(resolve => setTimeout(resolve, 5000));
     }
   };
 
@@ -243,7 +249,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       const frames = await extractFrames(file);
       
       // Step 2: Chunk frames into batches of 15 (~1.5MB each, safe under 4.5MB limit)
-      const BATCH_SIZE = 15;
+      const BATCH_SIZE = 10;  // Smaller batches = fewer tokens = less rate limiting
       const batches = chunkArray(frames, BATCH_SIZE);
       const totalBatches = batches.length;
       
