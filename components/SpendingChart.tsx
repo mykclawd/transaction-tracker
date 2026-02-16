@@ -2,19 +2,24 @@
 
 import { Transaction } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+  ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
 
 interface SpendingChartProps {
   transactions: Transaction[];
 }
+
+const chartConfig = {
+  amount: {
+    label: "Spent",
+    color: "hsl(221, 83%, 53%)",
+  },
+} satisfies ChartConfig;
 
 export function SpendingChart({ transactions }: SpendingChartProps) {
   // Group transactions by date and sum amounts
@@ -44,33 +49,44 @@ export function SpendingChart({ transactions }: SpendingChartProps) {
         <CardDescription>Daily spending for the last 30 days with activity</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 12 }}
-                interval={Math.ceil(data.length / 6) - 1}
-              />
-              <YAxis
-                tick={{ fontSize: 12 }}
-                tickFormatter={(value) => `$${value}`}
-              />
-              <Tooltip
-                formatter={(value) => [typeof value === 'number' ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : value, "Spent"]}
-                contentStyle={{ borderRadius: "8px" }}
-              />
-              <Line
-                type="monotone"
-                dataKey="amount"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                dot={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        <ChartContainer config={chartConfig} className="h-[250px] w-full">
+          <LineChart data={data} margin={{ left: 12, right: 12 }}>
+            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+            <XAxis
+              dataKey="date"
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              tick={{ fontSize: 12 }}
+              interval={Math.ceil(data.length / 6) - 1}
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              tick={{ fontSize: 12 }}
+              tickFormatter={(value) => `$${value}`}
+            />
+            <ChartTooltip
+              content={
+                <ChartTooltipContent
+                  formatter={(value) => (
+                    <span className="font-mono font-medium">
+                      ${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  )}
+                />
+              }
+            />
+            <Line
+              type="monotone"
+              dataKey="amount"
+              stroke="var(--color-amount)"
+              strokeWidth={2}
+              dot={false}
+            />
+          </LineChart>
+        </ChartContainer>
       </CardContent>
     </Card>
   );

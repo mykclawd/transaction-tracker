@@ -2,19 +2,24 @@
 
 import { Transaction } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+  ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
 
 interface MonthlySpendingProps {
   transactions: Transaction[];
 }
+
+const chartConfig = {
+  total: {
+    label: "Total Spent",
+    color: "hsl(221, 83%, 53%)",
+  },
+} satisfies ChartConfig;
 
 export function MonthlySpending({ transactions }: MonthlySpendingProps) {
   // Group transactions by month
@@ -48,27 +53,56 @@ export function MonthlySpending({ transactions }: MonthlySpendingProps) {
         <CardDescription>Transaction totals by month</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-              <YAxis
-                tick={{ fontSize: 12 }}
-                tickFormatter={(value) => `$${value}`}
-              />
-              <Tooltip
-                formatter={(value, name) => {
-                  if (name === "total") return [typeof value === 'number' ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : value, "Spent"];
-                  if (name === "btcRewards") return [typeof value === 'number' ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : value, "BTC Rewards"];
-                  return [value, name];
-                }}
-                contentStyle={{ borderRadius: "8px" }}
-              />
-              <Bar dataKey="total" fill="#3b82f6" name="Total Spent" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <ChartContainer config={chartConfig} className="h-[280px] w-full">
+          <BarChart data={data} margin={{ left: 12, right: 12 }}>
+            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+            <XAxis
+              dataKey="label"
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              tick={{ fontSize: 12 }}
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              tick={{ fontSize: 12 }}
+              tickFormatter={(value) => `$${value}`}
+            />
+            <ChartTooltip
+              content={
+                <ChartTooltipContent
+                  formatter={(value, name, item) => (
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">Spent</span>
+                        <span className="font-mono font-medium">
+                          ${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">Transactions</span>
+                        <span className="font-mono font-medium">{item.payload.count}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">BTC Rewards</span>
+                        <span className="font-mono font-medium">
+                          ${Number(item.payload.btcRewards).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                />
+              }
+            />
+            <Bar
+              dataKey="total"
+              fill="var(--color-total)"
+              radius={[4, 4, 0, 0]}
+            />
+          </BarChart>
+        </ChartContainer>
 
         <div className="grid gap-4 md:grid-cols-3">
           {data.slice().reverse().slice(0, 6).map((month) => (
@@ -78,21 +112,21 @@ export function MonthlySpending({ transactions }: MonthlySpendingProps) {
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-sm text-zinc-500">Total Spent</span>
+                  <span className="text-sm text-muted-foreground">Total Spent</span>
                   <span className="font-medium">${(Number(month.total) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-zinc-500">Transactions</span>
+                  <span className="text-sm text-muted-foreground">Transactions</span>
                   <span className="font-medium">{month.count}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-zinc-500">BTC Rewards</span>
+                  <span className="text-sm text-muted-foreground">BTC Rewards</span>
                   <span className="font-medium">
                     ${(Number(month.btcRewards) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-zinc-500">Avg per Transaction</span>
+                  <span className="text-sm text-muted-foreground">Avg per Transaction</span>
                   <span className="font-medium">
                     ${month.count > 0 ? ((Number(month.total) || 0) / month.count).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00"}
                   </span>
@@ -103,7 +137,7 @@ export function MonthlySpending({ transactions }: MonthlySpendingProps) {
         </div>
 
         {data.length === 0 && (
-          <div className="text-center py-8 text-zinc-500">
+          <div className="text-center py-8 text-muted-foreground">
             No monthly data available. Upload a video to see your spending by month.
           </div>
         )}

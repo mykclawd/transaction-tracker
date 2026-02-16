@@ -2,30 +2,31 @@
 
 import { Transaction } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Pie, PieChart, Cell } from "recharts";
 import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-} from "recharts";
+  ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartLegend,
+  ChartLegendContent,
+} from "@/components/ui/chart";
 
 interface CategoryBreakdownProps {
   transactions: Transaction[];
 }
 
-const COLORS = [
-  "#3b82f6",
-  "#ef4444",
-  "#22c55e",
-  "#f59e0b",
-  "#8b5cf6",
-  "#ec4899",
-  "#06b6d4",
-  "#84cc16",
-  "#f97316",
-  "#6366f1",
+const CHART_COLORS = [
+  "hsl(221, 83%, 53%)",  // blue
+  "hsl(0, 84%, 60%)",    // red
+  "hsl(142, 71%, 45%)",  // green
+  "hsl(38, 92%, 50%)",   // amber
+  "hsl(262, 83%, 58%)",  // purple
+  "hsl(330, 81%, 60%)",  // pink
+  "hsl(187, 85%, 53%)",  // cyan
+  "hsl(84, 65%, 45%)",   // lime
+  "hsl(24, 95%, 53%)",   // orange
+  "hsl(239, 84%, 67%)",  // indigo
 ];
 
 export function CategoryBreakdown({ transactions }: CategoryBreakdownProps) {
@@ -37,19 +38,19 @@ export function CategoryBreakdown({ transactions }: CategoryBreakdownProps) {
   }, {} as Record<string, number>);
 
   // Convert to array and sort by amount
-  const data = Object.entries(groupedByCategory)
+  const allData = Object.entries(groupedByCategory)
     .map(([name, value]) => ({ name, value, percentage: 0 }))
     .sort((a, b) => b.value - a.value);
 
   // Calculate percentages
-  const total = data.reduce((sum, item) => sum + item.value, 0);
-  data.forEach((item) => {
+  const total = allData.reduce((sum, item) => sum + item.value, 0);
+  allData.forEach((item) => {
     item.percentage = total > 0 ? (item.value / total) * 100 : 0;
   });
 
   // Top 5 categories for the pie chart, group the rest as "Other"
-  const topCategories = data.slice(0, 5);
-  const otherCategories = data.slice(5);
+  const topCategories = allData.slice(0, 5);
+  const otherCategories = allData.slice(5);
   
   if (otherCategories.length > 0) {
     const otherTotal = otherCategories.reduce((sum, item) => sum + item.value, 0);
@@ -60,6 +61,24 @@ export function CategoryBreakdown({ transactions }: CategoryBreakdownProps) {
     });
   }
 
+  // Build chart config dynamically based on categories
+  const chartConfig: ChartConfig = topCategories.reduce((config, item, index) => {
+    const key = item.name.toLowerCase().replace(/\s+/g, '-');
+    config[key] = {
+      label: item.name,
+      color: CHART_COLORS[index % CHART_COLORS.length],
+    };
+    return config;
+  }, {} as ChartConfig);
+
+  // Transform data for the chart
+  const chartData = topCategories.map((item, index) => ({
+    category: item.name.toLowerCase().replace(/\s+/g, '-'),
+    name: item.name,
+    value: item.value,
+    fill: CHART_COLORS[index % CHART_COLORS.length],
+  }));
+
   return (
     <Card>
       <CardHeader>
@@ -67,46 +86,51 @@ export function CategoryBreakdown({ transactions }: CategoryBreakdownProps) {
         <CardDescription>Breakdown of where your money goes</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={topCategories}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={(props) => {
-                  const { name, value } = props;
-                  const total = topCategories.reduce((sum, item) => sum + item.value, 0);
-                  const pct = total > 0 ? ((value as number) / total) * 100 : 0;
-                  return `${name}: ${pct.toFixed(1)}%`;
-                }}
-                outerRadius={70}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {topCategories.map((entry, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={COLORS[index % COLORS.length]}
-                  />
-                ))}
-              </Pie>
-              <Tooltip
-                formatter={(value, name) => [
-                  typeof value === 'number' ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : value,
-                  name,
-                ]}
-                contentStyle={{ borderRadius: "8px" }}
-              />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+        <ChartContainer config={chartConfig} className="mx-auto aspect-square h-[300px]">
+          <PieChart>
+            <ChartTooltip
+              content={
+                <ChartTooltipContent
+                  formatter={(value, name, item) => (
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                        style={{ backgroundColor: item.payload.fill }}
+                      />
+                      <span>{item.payload.name}</span>
+                      <span className="ml-auto font-mono font-medium">
+                        ${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )}
+                />
+              }
+            />
+            <Pie
+              data={chartData}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              innerRadius={60}
+              outerRadius={100}
+              strokeWidth={2}
+              stroke="hsl(var(--background))"
+            >
+              {chartData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
+              ))}
+            </Pie>
+            <ChartLegend
+              content={<ChartLegendContent nameKey="name" />}
+              className="-translate-y-2 flex-wrap gap-2 [&>*]:basis-1/3 [&>*]:justify-center"
+            />
+          </PieChart>
+        </ChartContainer>
 
         {/* Detailed breakdown table */}
-        <div className="mt-6 space-y-2">
-          {data.map((item, index) => (
+        <div className="mt-4 space-y-2">
+          {allData.map((item, index) => (
             <div
               key={item.name}
               className="flex items-center justify-between text-sm"
@@ -115,14 +139,13 @@ export function CategoryBreakdown({ transactions }: CategoryBreakdownProps) {
                 <div
                   className="h-3 w-3 rounded-full"
                   style={{
-                    backgroundColor:
-                      COLORS[index % COLORS.length],
+                    backgroundColor: CHART_COLORS[index % CHART_COLORS.length],
                   }}
                 />
                 <span>{item.name}</span>
               </div>
               <div className="flex items-center gap-4">
-                <span className="text-zinc-500">
+                <span className="text-muted-foreground">
                   {(Number(item.percentage) || 0).toFixed(1)}%
                 </span>
                 <span className="font-medium">
