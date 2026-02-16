@@ -210,27 +210,33 @@ Return ONLY a valid JSON array. Example:
 
 // Legacy: extract from full video
 async function extractTransactionsFromVideo(base64Video: string): Promise<Transaction[]> {
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+  const response = await withRetry(() => openai.chat.completions.create({
+    model: "gpt-4o",
     messages: [
       {
         role: "system",
-        content: `You are a transaction extraction specialist. Analyze video frames showing credit card transactions and extract:
-- merchant_name (string)
-- transaction_date (format MM/DD/YYYY or similar)
-- amount_spent (number, parse the dollar amount)
-- bitcoin_rewards (number, parse BTC amount, default to 0 if not shown)
+        content: `You are a transaction extraction specialist. Analyze this video showing credit card transactions and extract EVERY SINGLE TRANSACTION visible.
 
-IGNORE any transactions marked as "pending" or "Pending".
+Extract these fields for each transaction:
+- merchant_name (string) - the business name
+- transaction_date (format MM/DD/YYYY) - convert any date format
+- amount_spent (number) - the dollar amount spent
+- bitcoin_rewards (number) - the USDC value shown in the "BTC Rewards" column
 
-Return ONLY a valid JSON array of transactions.`,
+CRITICAL RULES:
+1. EXTRACT EVERY TRANSACTION YOU SEE - do not skip any
+2. IGNORE any transactions marked as "pending" or "Pending"
+3. IGNORE "Payment made" or "Payment received" entries
+4. The "BTC Rewards" column shows a USDC value - extract just the number
+
+Return ONLY a valid JSON array.`,
       },
       {
         role: "user",
         content: [
           {
             type: "text",
-            text: "Extract all transactions from this video. Ignore pending transactions.",
+            text: "Extract all credit card transactions from this video. Include merchant name, date, amount spent, and BTC Rewards in USDC.",
           },
           {
             type: "input_video" as any,
@@ -243,7 +249,7 @@ Return ONLY a valid JSON array of transactions.`,
       },
     ],
     max_tokens: 8000,
-  });
+  }));
 
   const content = response.choices[0].message.content;
   if (!content) {

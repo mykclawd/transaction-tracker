@@ -3,13 +3,13 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Upload, Loader2, X, FileVideo, Check, Image, Send, Brain, Clock, CheckCircle, XCircle, LogOut } from "lucide-react";
+import { Upload, Loader2, X, FileVideo, Check, Brain, Clock, LogOut } from "lucide-react";
 
 interface VideoUploadProps {
   onUploadComplete: () => void;
 }
 
-type ProcessingStep = "idle" | "extracting" | "uploading" | "processing" | "completed" | "failed";
+type ProcessingStep = "idle" | "uploading" | "processing" | "completed" | "failed";
 
 interface StepInfo {
   step: ProcessingStep;
@@ -157,108 +157,19 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     }
   };
 
-  // Extract frames from video using canvas
-  const extractFrames = async (file: File): Promise<string[]> => {
-    return new Promise((resolve, reject) => {
-      const video = document.createElement("video");
-      video.preload = "metadata";
-      video.muted = true;
-      video.playsInline = true;
-      
-      const url = URL.createObjectURL(file);
-      video.src = url;
-
-      video.onloadedmetadata = async () => {
-        const duration = video.duration;
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        
-        if (!ctx) {
-          URL.revokeObjectURL(url);
-          reject(new Error("Failed to get canvas context"));
-          return;
-        }
-
-        // Resize to smaller dimensions (max 800px wide) to reduce payload
-        const scale = Math.min(1, 800 / video.videoWidth);
-        canvas.width = Math.round(video.videoWidth * scale);
-        canvas.height = Math.round(video.videoHeight * scale);
-
-        // Extract 2 frames every second for better coverage (catch fast scrolling)
-        // No cap - we'll send frames in batches to stay under payload limits
-        const frameInterval = 0.5; // 1 frame every 0.5 seconds
-        const frameCount = Math.ceil(duration / frameInterval);
-        const frames: string[] = [];
-
-        const captureFrame = (time: number): Promise<string> => {
-          return new Promise((res) => {
-            video.currentTime = time;
-            video.onseeked = () => {
-              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-              // Use JPEG with 50% quality - still readable for text, smaller payload
-              const dataUrl = canvas.toDataURL("image/jpeg", 0.5);
-              res(dataUrl);
-            };
-          });
-        };
-
-        try {
-          for (let i = 0; i < frameCount; i++) {
-            const time = i * frameInterval;
-            setStepInfo({ 
-              step: "extracting", 
-              progress: Math.round((i / frameCount) * 25), 
-              message: `Extracting frame ${i + 1} of ${frameCount}...` 
-            });
-            const frame = await captureFrame(time);
-            frames.push(frame);
-          }
-          URL.revokeObjectURL(url);
-          resolve(frames);
-        } catch (err) {
-          URL.revokeObjectURL(url);
-          reject(err);
-        }
-      };
-
-      video.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("Failed to load video"));
-      };
-    });
-  };
-
-  // Helper to chunk array into batches
-  const chunkArray = <T,>(arr: T[], size: number): T[][] => {
-    const chunks: T[][] = [];
-    for (let i = 0; i < arr.length; i += size) {
-      chunks.push(arr.slice(i, i + size));
-    }
-    return chunks;
-  };
-
-  // Submit a batch as a job
-  const submitBatch = async (frames: string[]): Promise<string> => {
-    const payload = JSON.stringify({ frames });
+  // Submit video as single upload
+  const submitVideo = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('video', file);
     
-    // Log payload size for debugging
-    const payloadSizeMB = payload.length / 1024 / 1024;
-    console.log(`Submitting batch: ${frames.length} frames, ${payloadSizeMB.toFixed(2)}MB`);
-    
-    if (payloadSizeMB > 4) {
-      throw new Error(`Payload too large: ${payloadSizeMB.toFixed(2)}MB (max 4MB)`);
-    }
-    
-    const response = await fetch("/api/jobs", {
+    const response = await fetch("/api/upload-video", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: payload,
+      body: formData,
     });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "Unknown error");
-      console.error(`Submit failed: ${response.status}`, errorText);
-      throw new Error(`Failed to submit batch: ${response.status} - ${errorText}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Upload failed: ${response.status}`);
     }
 
     const { jobId } = await response.json();
@@ -299,60 +210,18 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     resetState();
 
     try {
-      // Step 1: Extract frames (user must stay)
-      setStepInfo({ step: "extracting", progress: 5, message: "Loading video...", canLeave: false });
-      const frames = await extractFrames(file);
+      // Upload the raw video file directly
+      setStepInfo({ step: "uploading", progress: 10, message: "Uploading video...", canLeave: false });
       
-      // Step 2: Chunk frames into batches (balance between speed and payload size)
-      const BATCH_SIZE = 12; // ~12 frames @ 0.5s = 6 seconds of video per batch
-      const batches = chunkArray(frames, BATCH_SIZE);
-      const totalBatches = batches.length;
+      const newJobId = await submitVideo(file);
+      setJobId(newJobId);
       
-      setStepInfo({ 
-        step: "uploading", 
-        progress: 30, 
-        message: `Submitting ${totalBatches} batch${totalBatches > 1 ? 'es' : ''} in parallel...`,
-        canLeave: false
-      });
-      
-      // Submit all batches IN PARALLEL for speed
-      const submitPromises = batches.map((batch, i) => 
-        submitBatch(batch).then(jobId => {
-          setStepInfo({ 
-            step: "uploading", 
-            progress: 30 + Math.round(((i + 1) / totalBatches) * 15), 
-            message: `Queued ${i + 1}/${totalBatches} batches...`,
-            canLeave: false
-          });
-          return jobId;
-        })
-      );
-      
-      // Wait for all submissions to complete
-      const jobIds = await Promise.all(submitPromises);
-      
-      // All batches queued - trigger workers immediately!
       setStepInfo({ 
         step: "processing", 
         progress: 50, 
-        message: `✅ All ${totalBatches} batches queued! Starting workers...`,
+        message: `✅ Video uploaded! Extracting frames on server...`,
         canLeave: true
       });
-      
-      // Trigger workers - fire multiple to ensure at least one wakes up
-      // Vercel Pro allows concurrent, so this will process 2 jobs at once
-      const triggerWorker = async () => {
-        try {
-          const res = await fetch("/api/worker", { method: "POST" });
-          if (!res.ok) console.error('Worker trigger failed:', res.status);
-          return res;
-        } catch (e) {
-          console.error('Worker trigger error:', e);
-        }
-      };
-      
-      // Fire 3 triggers in parallel - at least one should succeed
-      await Promise.all([triggerWorker(), triggerWorker(), triggerWorker()]);
       
       // Refresh background jobs list
       fetchBackgroundJobs();
@@ -361,21 +230,10 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
       
-      // Wait for all jobs to complete (optional - user can leave)
-      let totalTransactions = 0;
-      for (let i = 0; i < jobIds.length; i++) {
-        setStepInfo({ 
-          step: "processing", 
-          progress: 50 + Math.round(((i + 1) / jobIds.length) * 45),
-          canLeave: true,
-          message: `Processing batch ${i + 1} of ${totalBatches}...` 
-        });
-        
-        const result = await waitForJob(jobIds[i]);
-        totalTransactions += result?.added || result?.transactionsCreated || 0;
-      }
+      // Wait for the single job to complete
+      const result = await waitForJob(newJobId);
+      const totalTransactions = result?.added || result?.transactionsCreated || 0;
       
-      // All batches complete
       setJobResult({ transactionsCreated: totalTransactions });
       setStepInfo({ 
         step: "completed", 
