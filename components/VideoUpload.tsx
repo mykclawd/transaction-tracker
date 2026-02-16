@@ -133,7 +133,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
             clearInterval(pollIntervalRef.current);
           }
         } else if (data.status === "processing") {
-          setStepInfo({ step: "processing", progress: 75, message: "AI analyzing transactions... this can take a few minutes. You can leave and come back later." });
+          setStepInfo({ step: "processing", progress: 75, message: "AI analyzing transactions... this can take a few minutes. You can leave and come back later.", canLeave: true });
         }
       } catch (err) {
         console.error("Polling error:", err);
