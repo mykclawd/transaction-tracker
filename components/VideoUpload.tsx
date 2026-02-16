@@ -386,58 +386,63 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
             </Button>
           )}
         </div>
+        
+        {/* Tip */}
+        <p className="text-xs text-muted-foreground">
+          💡 For best results, keep videos 30 seconds or less. Multiple shorter uploads work better than one long video.
+        </p>
 
         {/* Progress Steps */}
         {stepInfo.step !== "idle" && (
-          <div className="space-y-4">
-            {/* Step Indicators */}
-            <div className="flex items-center justify-between">
-              {steps.map((step, index) => {
+          <div className="space-y-4 -mx-6 px-6">
+            {/* Step Indicators - Full Width */}
+            <div className="relative flex items-start justify-between">
+              {/* Connecting Lines - positioned behind circles */}
+              <div className="absolute top-5 left-0 right-0 flex items-center px-[calc(16.67%-20px)]">
+                <div className={`h-0.5 flex-1 transition-colors ${
+                  getStepStatus("processing") !== "pending" ? "bg-green-500" : "bg-zinc-200 dark:bg-zinc-700"
+                }`} />
+                <div className={`h-0.5 flex-1 transition-colors ${
+                  getStepStatus("completed") !== "pending" ? "bg-green-500" : "bg-zinc-200 dark:bg-zinc-700"
+                }`} />
+              </div>
+              
+              {/* Step Icons and Labels */}
+              {steps.map((step) => {
                 const status = getStepStatus(step.id);
                 const Icon = step.icon;
                 return (
-                  <div key={step.id} className="flex flex-1 items-center">
-                    <div className="flex flex-col items-center">
-                      <div
-                        className={`flex h-10 w-10 items-center justify-center rounded-full border-2 transition-all ${
-                          status === "complete"
-                            ? "border-green-500 bg-green-500 text-white"
-                            : status === "current"
-                            ? "border-blue-500 bg-blue-50 text-blue-500 dark:bg-blue-950"
-                            : status === "failed"
-                            ? "border-red-500 bg-red-50 text-red-500 dark:bg-red-950"
-                            : "border-zinc-300 bg-zinc-50 text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900"
-                        }`}
-                      >
-                        {status === "current" && step.id !== "completed" ? (
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                        ) : (
-                          <Icon className="h-5 w-5" />
-                        )}
-                      </div>
-                      <span
-                        className={`mt-2 text-xs font-medium ${
-                          status === "complete"
-                            ? "text-green-600 dark:text-green-400"
-                            : status === "current"
-                            ? "text-blue-600 dark:text-blue-400"
-                            : status === "failed"
-                            ? "text-red-600 dark:text-red-400"
-                            : "text-zinc-400"
-                        }`}
-                      >
-                        {step.label}
-                      </span>
+                  <div key={step.id} className="relative z-10 flex flex-col items-center flex-1">
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-full border-2 transition-all ${
+                        status === "complete"
+                          ? "border-green-500 bg-green-500 text-white"
+                          : status === "current"
+                          ? "border-blue-500 bg-blue-50 text-blue-500 dark:bg-blue-950"
+                          : status === "failed"
+                          ? "border-red-500 bg-red-50 text-red-500 dark:bg-red-950"
+                          : "border-zinc-300 bg-zinc-50 text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900"
+                      }`}
+                    >
+                      {status === "current" && step.id !== "completed" ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <Icon className="h-5 w-5" />
+                      )}
                     </div>
-                    {index < steps.length - 1 && (
-                      <div
-                        className={`mx-2 h-0.5 flex-1 ${
-                          getStepStatus(steps[index + 1].id) !== "pending"
-                            ? "bg-green-500"
-                            : "bg-zinc-200 dark:bg-zinc-700"
-                        }`}
-                      />
-                    )}
+                    <span
+                      className={`mt-2 text-xs font-medium ${
+                        status === "complete"
+                          ? "text-green-600 dark:text-green-400"
+                          : status === "current"
+                          ? "text-blue-600 dark:text-blue-400"
+                          : status === "failed"
+                          ? "text-red-600 dark:text-red-400"
+                          : "text-zinc-400"
+                      }`}
+                    >
+                      {step.label}
+                    </span>
                   </div>
                 );
               })}
