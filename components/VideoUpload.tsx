@@ -158,8 +158,8 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     }
   };
 
-  // Extract frames client-side and send directly to API for processing
-  const processVideo = async (file: File): Promise<{ added: number; totalExtracted: number }> => {
+  // Extract frames client-side and upload to R2 for background processing
+  const processVideo = async (file: File): Promise<string> => {
     // Step 1: Extract frames from video client-side
     setStepInfo({ step: "uploading", progress: 5, message: "Loading video...", canLeave: false });
     
@@ -169,8 +169,8 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       maxWidth: 800,
       quality: 0.5,         // Lower quality to reduce payload size
       onProgress: (progress, message) => {
-        // Map extraction to 5-60% progress
-        const mappedProgress = 5 + Math.round((progress / 100) * 55);
+        // Map extraction to 5-50% progress
+        const mappedProgress = 5 + Math.round((progress / 100) * 45);
         setStepInfo({ step: "uploading", progress: mappedProgress, message, canLeave: false });
       },
     });
@@ -179,49 +179,46 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       throw new Error("No frames could be extracted from video");
     }
 
-    console.log(`📸 Extracted ${frames.length} frames`);
+    console.log(`📸 Extracted ${frames.length} frames, uploading to R2...`);
     
-    // Step 2: Split frames into chunks to avoid payload limit (max ~25 frames per request ≈ 2MB)
-    const FRAMES_PER_REQUEST = 25;
-    const chunks: string[][] = [];
-    for (let i = 0; i < frames.length; i += FRAMES_PER_REQUEST) {
-      chunks.push(frames.slice(i, i + FRAMES_PER_REQUEST));
-    }
-    
-    console.log(`📦 Split into ${chunks.length} API requests`);
-    
-    // Step 3: Send all chunks to API in parallel
+    // Step 2: Upload all frames to R2 in batches (to stay under payload limit)
     setStepInfo({ 
-      step: "processing", 
-      progress: 65, 
-      message: `Processing ${chunks.length} batches in parallel...`, 
+      step: "uploading", 
+      progress: 55, 
+      message: `Uploading ${frames.length} frames...`, 
       canLeave: false 
     });
     
-    const results = await Promise.all(
-      chunks.map(async (chunk, i) => {
-        const response = await fetch("/api/process-frames", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ frames: chunk }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Processing failed on batch ${i + 1}: ${errorText}`);
-        }
-
-        const result = await response.json();
-        console.log(`Batch ${i + 1}/${chunks.length} result:`, result);
-        return result;
-      })
-    );
+    // Split frames into upload batches to avoid payload limit
+    const FRAMES_PER_UPLOAD = 25;
+    const uploadBatches: string[][] = [];
+    for (let i = 0; i < frames.length; i += FRAMES_PER_UPLOAD) {
+      uploadBatches.push(frames.slice(i, i + FRAMES_PER_UPLOAD));
+    }
     
-    // Aggregate results
-    const totalAdded = results.reduce((sum, r) => sum + (r.added || 0), 0);
-    const totalExtracted = results.reduce((sum, r) => sum + (r.totalExtracted || 0), 0);
+    // Upload batches in parallel, collect job IDs (each batch creates a job)
+    const uploadPromises = uploadBatches.map(async (batch, i) => {
+      const response = await fetch("/api/upload-frames", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ frames: batch }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Upload failed on batch ${i + 1}: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log(`📤 Batch ${i + 1}/${uploadBatches.length} uploaded, job: ${result.jobId}`);
+      return result.jobId;
+    });
     
-    return { added: totalAdded, totalExtracted };
+    const jobIds = await Promise.all(uploadPromises);
+    console.log(`✅ Created ${jobIds.length} background jobs`);
+    
+    // Return the first job ID for polling (all jobs will be processed)
+    return jobIds[0];
   };
 
   const handleUpload = async () => {
@@ -231,22 +228,25 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     resetState();
 
     try {
-      // Process video: extract frames client-side, then send to API
-      const result = await processVideo(file);
-      const totalTransactions = result?.added || 0;
+      // Process video: extract frames client-side, upload to R2, get job ID
+      const newJobId = await processVideo(file);
+      
+      // Set job ID to start polling
+      setJobId(newJobId);
+      setStepInfo({ 
+        step: "processing", 
+        progress: 70, 
+        message: "Processing in background... you can leave this page and come back later.",
+        canLeave: true
+      });
       
       // Clear file input
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
       
-      setJobResult({ transactionsCreated: totalTransactions, totalExtracted: result?.totalExtracted });
-      setStepInfo({ 
-        step: "completed", 
-        progress: 100, 
-        message: `Found ${totalTransactions} new transaction${totalTransactions !== 1 ? 's' : ''}!`,
-        canLeave: true
-      });
-      onUploadComplete();
+      // Trigger worker to start processing
+      fetch("/api/worker", { method: "POST" }).catch(() => {});
+      setTimeout(() => fetch("/api/worker", { method: "POST" }).catch(() => {}), 500);
       
     } catch (err) {
       console.error("Upload error:", err);

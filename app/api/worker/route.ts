@@ -1,7 +1,7 @@
 import { pool, generateTransactionId, parseTransactionDate, getUserMerchantCategory, getGlobalMerchantCategory, setGlobalMerchantCategory } from "@/lib/db";
 import { getMerchantCategory, categorizeByCommonName } from "@/lib/places";
 import OpenAI from "openai";
-import { S3Client, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand } from "@aws-sdk/client-s3";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -272,9 +272,38 @@ async function processJob(job: any) {
     );
 
     let rawTransactions: Transaction[];
+    let frameKeysToCleanup: string[] | null = null;
     
     // Handle different payload types
-    if (payload.videoKey) {
+    if (payload.frameKeys && payload.frameKeys.length > 0) {
+      // New: Process frames stored in R2
+      console.log(`📸 Processing ${payload.frameKeys.length} frames from R2 for job ${id}`);
+      frameKeysToCleanup = payload.frameKeys;
+      
+      // Download all frames from R2 in parallel
+      const framePromises = payload.frameKeys.map(async (key: string) => {
+        const getCommand = new GetObjectCommand({
+          Bucket: R2_BUCKET_NAME,
+          Key: key,
+        });
+        
+        const response = await r2Client.send(getCommand);
+        const chunks: Buffer[] = [];
+        const stream = response.Body as any;
+        
+        for await (const chunk of stream) {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+        
+        const buffer = Buffer.concat(chunks);
+        return `data:image/jpeg;base64,${buffer.toString('base64')}`;
+      });
+      
+      const frames = await Promise.all(framePromises);
+      console.log(`✅ Downloaded ${frames.length} frames from R2`);
+      
+      rawTransactions = await extractTransactionsFromFrames(frames);
+    } else if (payload.videoKey) {
       console.log(`🎬 Processing video from R2 for job ${id}: ${payload.videoKey}`);
       try {
         const key = payload.videoKey;
@@ -414,6 +443,25 @@ async function processJob(job: any) {
         console.warn(`⚠️ Failed to cleanup R2 video: ${cleanupErr.message}`);
       }
     }
+    
+    // Cleanup: delete frames from R2 after successful processing
+    if (frameKeysToCleanup && frameKeysToCleanup.length > 0) {
+      try {
+        // Delete in batches of 1000 (S3 limit)
+        for (let i = 0; i < frameKeysToCleanup.length; i += 1000) {
+          const batch = frameKeysToCleanup.slice(i, i + 1000);
+          await r2Client.send(new DeleteObjectsCommand({
+            Bucket: R2_BUCKET_NAME,
+            Delete: {
+              Objects: batch.map(key => ({ Key: key })),
+            },
+          }));
+        }
+        console.log(`🗑️ Deleted ${frameKeysToCleanup.length} frames from R2`);
+      } catch (cleanupErr: any) {
+        console.warn(`⚠️ Failed to cleanup R2 frames: ${cleanupErr.message}`);
+      }
+    }
   } catch (error: any) {
     console.error(`❌ Job ${id} failed:`, error.message);
     await pool.query(
@@ -431,6 +479,24 @@ async function processJob(job: any) {
         console.log(`🗑️ Deleted video from R2 after failure: ${payload.videoKey}`);
       } catch (cleanupErr: any) {
         console.warn(`⚠️ Failed to cleanup R2 video: ${cleanupErr.message}`);
+      }
+    }
+    
+    // Cleanup: also delete frames on failure
+    if (payload.frameKeys && payload.frameKeys.length > 0) {
+      try {
+        for (let i = 0; i < payload.frameKeys.length; i += 1000) {
+          const batch = payload.frameKeys.slice(i, i + 1000);
+          await r2Client.send(new DeleteObjectsCommand({
+            Bucket: R2_BUCKET_NAME,
+            Delete: {
+              Objects: batch.map((key: string) => ({ Key: key })),
+            },
+          }));
+        }
+        console.log(`🗑️ Deleted ${payload.frameKeys.length} frames from R2 after failure`);
+      } catch (cleanupErr: any) {
+        console.warn(`⚠️ Failed to cleanup R2 frames: ${cleanupErr.message}`);
       }
     }
   }
