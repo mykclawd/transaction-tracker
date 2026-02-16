@@ -111,9 +111,9 @@ export function LandingPage() {
           <div className="grid gap-12 lg:grid-cols-2 items-center">
             <div className="order-2 lg:order-1">
               <img
-                src="/app-icon.jpg"
+                src="/app-icon-nobg3.png"
                 alt="Spend features"
-                className="rounded-2xl shadow-xl w-full max-w-xs sm:max-w-sm mx-auto"
+                className="w-full max-w-xs sm:max-w-sm mx-auto"
               />
             </div>
             <div className="order-1 lg:order-2">
