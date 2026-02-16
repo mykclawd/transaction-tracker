@@ -157,10 +157,10 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     }
   };
 
-  // Upload video to R2 via presigned URL, then create job
+  // Upload video to R2 via presigned URL with progress tracking, then create job
   const submitVideo = async (file: File): Promise<string> => {
     // Step 1: Get presigned URL from our API
-    setStepInfo({ step: "uploading", progress: 10, message: "Getting upload URL...", canLeave: false });
+    setStepInfo({ step: "uploading", progress: 5, message: "Getting upload URL...", canLeave: false });
     
     let presignedUrl: string;
     let publicUrl: string;
@@ -190,23 +190,48 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       throw new Error(`Failed to get upload URL: ${e.message}`);
     }
     
-    // Step 2: Upload video directly to R2
-    setStepInfo({ step: "uploading", progress: 30, message: "Uploading to cloud storage...", canLeave: false });
+    // Step 2: Upload video directly to R2 with progress tracking
+    setStepInfo({ step: "uploading", progress: 10, message: "Starting upload...", canLeave: false });
     
     try {
-      const uploadResponse = await fetch(presignedUrl, {
-        method: "PUT",
-        body: file,
-        headers: { 
-          "Content-Type": file.type,
-        },
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        
+        xhr.upload.addEventListener("progress", (event) => {
+          if (event.lengthComputable) {
+            const percentComplete = Math.round((event.loaded / event.total) * 100);
+            // Map 10-80% to the upload phase
+            const mappedProgress = 10 + Math.round(percentComplete * 0.7);
+            setStepInfo({ 
+              step: "uploading", 
+              progress: mappedProgress, 
+              message: `Uploading: ${percentComplete}% (${(event.loaded / 1024 / 1024).toFixed(1)}MB / ${(event.total / 1024 / 1024).toFixed(1)}MB)`,
+              canLeave: false 
+            });
+          }
+        });
+        
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`Upload failed: ${xhr.status} - ${xhr.responseText}`));
+          }
+        });
+        
+        xhr.addEventListener("error", () => {
+          reject(new Error("Upload failed due to network error"));
+        });
+        
+        xhr.addEventListener("abort", () => {
+          reject(new Error("Upload was aborted"));
+        });
+        
+        xhr.open("PUT", presignedUrl);
+        xhr.setRequestHeader("Content-Type", file.type);
+        xhr.send(file);
       });
-
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        console.error("R2 upload failed:", uploadResponse.status, errorText);
-        throw new Error(`Failed to upload video to storage: ${uploadResponse.status} - ${errorText}`);
-      }
+      
       console.log("Video uploaded to R2 successfully");
     } catch (e: any) {
       console.error("Error uploading to R2:", e);
@@ -214,7 +239,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     }
     
     // Step 3: Create job with the public URL
-    setStepInfo({ step: "uploading", progress: 50, message: "Creating processing job...", canLeave: false });
+    setStepInfo({ step: "uploading", progress: 85, message: "Creating processing job...", canLeave: false });
     
     try {
       const jobResponse = await fetch("/api/jobs", {
