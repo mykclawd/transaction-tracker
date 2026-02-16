@@ -2,7 +2,7 @@
 
 export interface FrameExtractionOptions {
   framesPerSecond?: number;  // How many frames per second (default: 1)
-  maxFrames?: number;        // Maximum frames to extract (default: 120)
+  maxFrames?: number;        // Maximum frames to extract (default: 200)
   maxWidth?: number;         // Max width of frames (default: 800)
   quality?: number;          // JPEG quality 0-1 (default: 0.6)
   onProgress?: (progress: number, message: string) => void;
@@ -14,7 +14,7 @@ export async function extractFramesFromVideo(
 ): Promise<string[]> {
   const {
     framesPerSecond = 1,
-    maxFrames = 120,
+    maxFrames = 200,
     maxWidth = 800,
     quality = 0.6,
     onProgress,

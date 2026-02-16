@@ -165,7 +165,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     
     const frames = await extractFramesFromVideo(file, {
       framesPerSecond: 1,  // 1 frame per second
-      maxFrames: 120,       // Max 2 minutes of video
+      maxFrames: 200,       // Max ~3.3 minutes of video
       maxWidth: 800,
       quality: 0.5,         // Lower quality to reduce payload size
       onProgress: (progress, message) => {
