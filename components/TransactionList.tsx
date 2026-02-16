@@ -125,28 +125,21 @@ export function TransactionList({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-          <Input
-            placeholder="Search transactions..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        <Select
-          value={sortBy}
-          onValueChange={(v) => setSortBy(v as "date" | "amount" | "merchant")}
-        >
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Sort by" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="date">Date</SelectItem>
-            <SelectItem value="amount">Amount</SelectItem>
-            <SelectItem value="merchant">Merchant</SelectItem>
-          </SelectContent>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        {/* Buttons row - first on mobile */}
+        <div className="flex items-center gap-2 order-1 sm:order-2 sm:flex-shrink-0">
+          <Select
+            value={sortBy}
+            onValueChange={(v) => setSortBy(v as "date" | "amount" | "merchant")}
+          >
+            <SelectTrigger className="w-32 sm:w-40">
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="date">Date</SelectItem>
+              <SelectItem value="amount">Amount</SelectItem>
+              <SelectItem value="merchant">Merchant</SelectItem>
+            </SelectContent>
         </Select>
         <Button
           variant="outline"
@@ -270,6 +263,18 @@ export function TransactionList({
             </DialogContent>
           </Dialog>
         )}
+        </div>
+        
+        {/* Search bar - second on mobile (appears below buttons) */}
+        <div className="relative flex-1 order-2 sm:order-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+          <Input
+            placeholder="Search transactions..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10"
+          />
+        </div>
       </div>
 
       <div className="rounded-md border">
