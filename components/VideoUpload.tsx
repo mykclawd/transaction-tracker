@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload, Loader2, X, FileVideo, Check, Brain, Clock, LogOut } from "lucide-react";
+import { extractFramesFromVideo } from "@/lib/frameExtractor";
 
 interface VideoUploadProps {
   onUploadComplete: () => void;
@@ -157,141 +158,45 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     }
   };
 
-  // Upload video to R2 via presigned URL with progress tracking, then create job
-  const submitVideo = async (file: File): Promise<string> => {
-    // Step 1: Get presigned URL from our API
-    setStepInfo({ step: "uploading", progress: 5, message: "Getting upload URL...", canLeave: false });
+  // Extract frames client-side and send directly to API for processing
+  const processVideo = async (file: File): Promise<{ added: number; totalExtracted: number }> => {
+    // Step 1: Extract frames from video client-side
+    setStepInfo({ step: "uploading", progress: 5, message: "Loading video...", canLeave: false });
     
-    let presignedUrl: string;
-    let videoKey: string;
-    
-    try {
-      const urlResponse = await fetch("/api/get-upload-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          filename: file.name, 
-          contentType: file.type,
-          fileSize: file.size,
-        }),
-      });
+    const frames = await extractFramesFromVideo(file, {
+      framesPerSecond: 1,  // 1 frame per second
+      maxFrames: 120,       // Max 2 minutes of video
+      maxWidth: 800,
+      quality: 0.6,
+      onProgress: (progress, message) => {
+        setStepInfo({ step: "uploading", progress, message, canLeave: false });
+      },
+    });
 
-      if (!urlResponse.ok) {
-        const errorText = await urlResponse.text();
-        console.error("Failed to get upload URL:", urlResponse.status, errorText);
-        throw new Error(`Failed to get upload URL: ${urlResponse.status} - ${errorText}`);
-      }
-
-      const data = await urlResponse.json();
-      videoKey = data.key;
-      
-      // Check if file was deduplicated (already exists in R2)
-      if (data.deduplicated) {
-        console.log("♻️ Video deduplicated, skipping upload:", videoKey);
-        setStepInfo({ step: "uploading", progress: 80, message: "Video already uploaded, skipping...", canLeave: false });
-        // Skip to job creation (Step 3)
-      } else {
-        presignedUrl = data.presignedUrl;
-        console.log("Got presigned URL for key:", videoKey);
-        
-        // Step 2: Upload video directly to R2 with progress tracking
-        setStepInfo({ step: "uploading", progress: 10, message: "Starting upload...", canLeave: false });
-        
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          
-          xhr.upload.addEventListener("progress", (event) => {
-            if (event.lengthComputable) {
-              const percentComplete = Math.round((event.loaded / event.total) * 100);
-              // Map 10-80% to the upload phase
-              const mappedProgress = 10 + Math.round(percentComplete * 0.7);
-              setStepInfo({ 
-                step: "uploading", 
-                progress: mappedProgress, 
-                message: `Uploading: ${percentComplete}% (${(event.loaded / 1024 / 1024).toFixed(1)}MB / ${(event.total / 1024 / 1024).toFixed(1)}MB)`,
-                canLeave: false 
-              });
-            }
-          });
-          
-          xhr.addEventListener("load", () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              resolve();
-            } else {
-              reject(new Error(`Upload failed: ${xhr.status} - ${xhr.responseText}`));
-            }
-          });
-          
-          xhr.addEventListener("error", () => {
-            reject(new Error("Upload failed due to network error"));
-          });
-          
-          xhr.addEventListener("abort", () => {
-            reject(new Error("Upload was aborted"));
-          });
-          
-          xhr.open("PUT", presignedUrl);
-          xhr.setRequestHeader("Content-Type", file.type);
-          xhr.send(file);
-        });
-        
-        console.log("Video uploaded to R2 successfully");
-      }
-    } catch (e: any) {
-      console.error("Error getting presigned URL:", e);
-      throw new Error(`Failed to get upload URL: ${e.message}`);
+    if (frames.length === 0) {
+      throw new Error("No frames could be extracted from video");
     }
-    
-    // Step 3: Create job with the public URL
-    setStepInfo({ step: "uploading", progress: 85, message: "Creating processing job...", canLeave: false });
-    
-    try {
-      const jobResponse = await fetch("/api/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoKey }),
-      });
 
-      if (!jobResponse.ok) {
-        const errorText = await jobResponse.text();
-        console.error("Failed to create job:", jobResponse.status, errorText);
-        throw new Error(`Failed to create job: ${jobResponse.status} - ${errorText}`);
-      }
+    console.log(`📸 Extracted ${frames.length} frames, sending to API...`);
+    
+    // Step 2: Send frames to API for processing
+    setStepInfo({ step: "processing", progress: 85, message: `Processing ${frames.length} frames with AI...`, canLeave: false });
+    
+    const response = await fetch("/api/process-frames", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ frames }),
+    });
 
-      const { jobId } = await jobResponse.json();
-      console.log("Job created:", jobId);
-      return jobId;
-    } catch (e: any) {
-      console.error("Error creating job:", e);
-      throw new Error(`Failed to create job: ${e.message}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Processing failed: ${errorText}`);
     }
-  };
 
-  // Trigger worker and check job status
-  const checkJobStatus = async (jobId: string): Promise<{ status: string; result?: any; error?: string }> => {
-    // Trigger worker to process jobs
-    await fetch("/api/worker", { method: "POST" }).catch(() => {});
+    const result = await response.json();
+    console.log("Processing result:", result);
     
-    // Check job status
-    const response = await fetch(`/api/jobs/${jobId}`);
-    if (!response.ok) throw new Error("Failed to check job status");
-    return response.json();
-  };
-
-  // Wait for a job to complete
-  const waitForJob = async (jobId: string): Promise<any> => {
-    while (true) {
-      const data = await checkJobStatus(jobId);
-      
-      if (data.status === "completed") {
-        return data.result;
-      } else if (data.status === "failed") {
-        throw new Error(data.error || "Job failed");
-      }
-      
-      // Wait 2 seconds before polling again
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
+    return result;
   };
 
   const handleUpload = async () => {
@@ -301,35 +206,19 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     resetState();
 
     try {
-      // Upload the raw video file directly
-      setStepInfo({ step: "uploading", progress: 10, message: "Uploading video...", canLeave: false });
-      
-      const newJobId = await submitVideo(file);
-      setJobId(newJobId);
-      
-      setStepInfo({ 
-        step: "processing", 
-        progress: 50, 
-        message: `✅ Video uploaded! Extracting frames on server...`,
-        canLeave: true
-      });
-      
-      // Refresh background jobs list
-      fetchBackgroundJobs();
+      // Process video: extract frames client-side, then send to API
+      const result = await processVideo(file);
+      const totalTransactions = result?.added || 0;
       
       // Clear file input
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
       
-      // Wait for the single job to complete
-      const result = await waitForJob(newJobId);
-      const totalTransactions = result?.added || result?.transactionsCreated || 0;
-      
-      setJobResult({ transactionsCreated: totalTransactions });
+      setJobResult({ transactionsCreated: totalTransactions, totalExtracted: result?.totalExtracted });
       setStepInfo({ 
         step: "completed", 
         progress: 100, 
-        message: `Found ${totalTransactions} transaction${totalTransactions !== 1 ? 's' : ''}!`,
+        message: `Found ${totalTransactions} new transaction${totalTransactions !== 1 ? 's' : ''}!`,
         canLeave: true
       });
       onUploadComplete();
