@@ -171,7 +171,8 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           filename: file.name, 
-          contentType: file.type 
+          contentType: file.type,
+          fileSize: file.size,
         }),
       });
 
@@ -182,60 +183,63 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       }
 
       const data = await urlResponse.json();
-      presignedUrl = data.presignedUrl;
       videoKey = data.key;
-      console.log("Got presigned URL for key:", videoKey);
+      
+      // Check if file was deduplicated (already exists in R2)
+      if (data.deduplicated) {
+        console.log("♻️ Video deduplicated, skipping upload:", videoKey);
+        setStepInfo({ step: "uploading", progress: 80, message: "Video already uploaded, skipping...", canLeave: false });
+        // Skip to job creation (Step 3)
+      } else {
+        presignedUrl = data.presignedUrl;
+        console.log("Got presigned URL for key:", videoKey);
+        
+        // Step 2: Upload video directly to R2 with progress tracking
+        setStepInfo({ step: "uploading", progress: 10, message: "Starting upload...", canLeave: false });
+        
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          
+          xhr.upload.addEventListener("progress", (event) => {
+            if (event.lengthComputable) {
+              const percentComplete = Math.round((event.loaded / event.total) * 100);
+              // Map 10-80% to the upload phase
+              const mappedProgress = 10 + Math.round(percentComplete * 0.7);
+              setStepInfo({ 
+                step: "uploading", 
+                progress: mappedProgress, 
+                message: `Uploading: ${percentComplete}% (${(event.loaded / 1024 / 1024).toFixed(1)}MB / ${(event.total / 1024 / 1024).toFixed(1)}MB)`,
+                canLeave: false 
+              });
+            }
+          });
+          
+          xhr.addEventListener("load", () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve();
+            } else {
+              reject(new Error(`Upload failed: ${xhr.status} - ${xhr.responseText}`));
+            }
+          });
+          
+          xhr.addEventListener("error", () => {
+            reject(new Error("Upload failed due to network error"));
+          });
+          
+          xhr.addEventListener("abort", () => {
+            reject(new Error("Upload was aborted"));
+          });
+          
+          xhr.open("PUT", presignedUrl);
+          xhr.setRequestHeader("Content-Type", file.type);
+          xhr.send(file);
+        });
+        
+        console.log("Video uploaded to R2 successfully");
+      }
     } catch (e: any) {
       console.error("Error getting presigned URL:", e);
       throw new Error(`Failed to get upload URL: ${e.message}`);
-    }
-    
-    // Step 2: Upload video directly to R2 with progress tracking
-    setStepInfo({ step: "uploading", progress: 10, message: "Starting upload...", canLeave: false });
-    
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        
-        xhr.upload.addEventListener("progress", (event) => {
-          if (event.lengthComputable) {
-            const percentComplete = Math.round((event.loaded / event.total) * 100);
-            // Map 10-80% to the upload phase
-            const mappedProgress = 10 + Math.round(percentComplete * 0.7);
-            setStepInfo({ 
-              step: "uploading", 
-              progress: mappedProgress, 
-              message: `Uploading: ${percentComplete}% (${(event.loaded / 1024 / 1024).toFixed(1)}MB / ${(event.total / 1024 / 1024).toFixed(1)}MB)`,
-              canLeave: false 
-            });
-          }
-        });
-        
-        xhr.addEventListener("load", () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            reject(new Error(`Upload failed: ${xhr.status} - ${xhr.responseText}`));
-          }
-        });
-        
-        xhr.addEventListener("error", () => {
-          reject(new Error("Upload failed due to network error"));
-        });
-        
-        xhr.addEventListener("abort", () => {
-          reject(new Error("Upload was aborted"));
-        });
-        
-        xhr.open("PUT", presignedUrl);
-        xhr.setRequestHeader("Content-Type", file.type);
-        xhr.send(file);
-      });
-      
-      console.log("Video uploaded to R2 successfully");
-    } catch (e: any) {
-      console.error("Error uploading to R2:", e);
-      throw new Error(`Failed to upload video: ${e.message}`);
     }
     
     // Step 3: Create job with the public URL

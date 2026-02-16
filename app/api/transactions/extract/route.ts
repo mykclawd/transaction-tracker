@@ -1,72 +1,40 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 import { Transaction } from "@/lib/types";
 import { pool, generateTransactionId, parseTransactionDate } from "@/lib/db";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const EXTRACTOR_URL = process.env.VIDEO_EXTRACTOR_URL || 'http://3.148.166.254:3456/api/extract-transactions';
+const EXTRACTOR_API_KEY = process.env.VIDEO_EXTRACTOR_API_KEY;
 
-// Extract frames from video using OpenAI Vision API
-async function extractTransactionsFromVideo(base64Video: string) {
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      {
-        role: "system",
-        content: `You are a transaction extraction specialist. Analyze video frames showing credit card transactions and extract:
-- merchant_name (string)
-- transaction_date (format MM/DD/YYYY or similar)
-- amount_spent (number, parse the dollar amount)
-- bitcoin_rewards (number, parse BTC amount, default to 0 if not shown)
-
-IGNORE any transactions marked as "pending" or "Pending".
-
-Return ONLY a valid JSON array of transactions. Example:
-[
-  {
-    "merchant_name": "Starbucks",
-    "transaction_date": "01/15/2024",
-    "amount_spent": 5.67,
-    "bitcoin_rewards": 0.00000123
+// Extract transactions using Clawd's video extractor service (Gemini 1.5 Pro)
+async function extractTransactionsFromVideo(base64Video: string): Promise<Transaction[]> {
+  if (!EXTRACTOR_API_KEY) {
+    throw new Error("VIDEO_EXTRACTOR_API_KEY not configured");
   }
-]
 
-If you see dates in other formats, convert to MM/DD/YYYY.`,
-      },
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: "Extract all transactions from this video. Ignore pending transactions.",
-          },
-          {
-            type: "input_video" as any,
-            input_video: {
-              data: base64Video,
-              format: "mp4",
-            },
-          } as any,
-        ],
-      },
-    ],
-    max_tokens: 4000,
+  const response = await fetch(EXTRACTOR_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': EXTRACTOR_API_KEY,
+    },
+    body: JSON.stringify({ video: base64Video }),
   });
 
-  const content = response.choices[0].message.content;
-  if (!content) {
-    throw new Error("No response from OpenAI");
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Video extraction failed: ${response.statusText}`);
   }
 
-  // Extract JSON from response
-  const jsonMatch = content.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) {
-    throw new Error("Could not parse transactions from response");
+  const data = await response.json();
+  
+  if (!data.success) {
+    throw new Error(data.error || 'Video extraction failed');
   }
 
-  return JSON.parse(jsonMatch[0]) as Transaction[];
+  console.log(`Extracted ${data.count} transactions using ${data.provider} in ${data.processingMs}ms`);
+  
+  return data.transactions;
 }
 
 export async function POST(request: Request) {
@@ -85,7 +53,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Extract transactions from video
+    // Extract transactions from video using Clawd's service
     const rawTransactions = await extractTransactionsFromVideo(video);
 
     let added = 0;
