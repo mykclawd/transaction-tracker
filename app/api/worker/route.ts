@@ -297,15 +297,25 @@ async function processJob(job: any) {
 
     let rawTransactions: Transaction[];
     
-    // Prefer frames, fall back to video
-    if (payload.frames && payload.frames.length > 0) {
+    // Handle different payload types
+    if (payload.videoUrl) {
+      console.log(`🎬 Processing video from URL for job ${id}: ${payload.videoUrl}`);
+      // Fetch video from R2 URL
+      const videoResponse = await fetch(payload.videoUrl);
+      if (!videoResponse.ok) {
+        throw new Error(`Failed to fetch video: ${videoResponse.status}`);
+      }
+      const videoBuffer = await videoResponse.arrayBuffer();
+      const base64Video = Buffer.from(videoBuffer).toString('base64');
+      rawTransactions = await extractTransactionsFromVideo(base64Video);
+    } else if (payload.frames && payload.frames.length > 0) {
       console.log(`📸 Processing ${payload.frames.length} frames for job ${id}`);
       rawTransactions = await extractTransactionsFromFrames(payload.frames);
     } else if (payload.video) {
-      console.log(`🎬 Processing video for job ${id}`);
+      console.log(`🎬 Processing base64 video for job ${id}`);
       rawTransactions = await extractTransactionsFromVideo(payload.video);
     } else {
-      throw new Error("No frames or video in payload");
+      throw new Error("No frames, video, or videoUrl in payload");
     }
 
     let added = 0;

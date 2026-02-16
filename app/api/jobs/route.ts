@@ -11,17 +11,18 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const frames = body.frames || [];
-    const video = body.video; // Legacy support
+    const video = body.video; // Legacy base64 support
+    const videoUrl = body.videoUrl; // New R2 URL support
 
-    if (!frames.length && !video) {
+    if (!frames.length && !video && !videoUrl) {
       return NextResponse.json(
-        { error: "No frames or video provided" },
+        { error: "No frames, video, or videoUrl provided" },
         { status: 400 }
       );
     }
 
-    // Create a job with frames (preferred) or video (legacy)
-    const payload = frames.length > 0 ? { frames } : { video };
+    // Create a job with the provided data
+    const payload = videoUrl ? { videoUrl } : frames.length > 0 ? { frames } : { video };
     
     const result = await pool.query(
       `INSERT INTO jobs (user_id, type, payload, status)

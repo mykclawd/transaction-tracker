@@ -157,22 +157,55 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     }
   };
 
-  // Submit video as single upload
+  // Upload video to R2 via presigned URL, then create job
   const submitVideo = async (file: File): Promise<string> => {
-    const formData = new FormData();
-    formData.append('video', file);
+    // Step 1: Get presigned URL from our API
+    setStepInfo({ step: "uploading", progress: 10, message: "Getting upload URL...", canLeave: false });
     
-    const response = await fetch("/api/upload-video", {
+    const urlResponse = await fetch("/api/get-upload-url", {
       method: "POST",
-      body: formData,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        filename: file.name, 
+        contentType: file.type 
+      }),
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `Upload failed: ${response.status}`);
+    if (!urlResponse.ok) {
+      const errorData = await urlResponse.json().catch(() => ({}));
+      throw new Error(errorData.error || `Failed to get upload URL: ${urlResponse.status}`);
     }
 
-    const { jobId } = await response.json();
+    const { presignedUrl, publicUrl } = await urlResponse.json();
+    
+    // Step 2: Upload video directly to R2
+    setStepInfo({ step: "uploading", progress: 30, message: "Uploading to cloud storage...", canLeave: false });
+    
+    const uploadResponse = await fetch(presignedUrl, {
+      method: "PUT",
+      body: file,
+      headers: { "Content-Type": file.type },
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(`Failed to upload video: ${uploadResponse.status}`);
+    }
+    
+    // Step 3: Create job with the public URL
+    setStepInfo({ step: "uploading", progress: 50, message: "Creating processing job...", canLeave: false });
+    
+    const jobResponse = await fetch("/api/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ videoUrl: publicUrl }),
+    });
+
+    if (!jobResponse.ok) {
+      const errorData = await jobResponse.json().catch(() => ({}));
+      throw new Error(errorData.error || `Failed to create job: ${jobResponse.status}`);
+    }
+
+    const { jobId } = await jobResponse.json();
     return jobId;
   };
 
