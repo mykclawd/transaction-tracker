@@ -167,9 +167,11 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       framesPerSecond: 1,  // 1 frame per second
       maxFrames: 120,       // Max 2 minutes of video
       maxWidth: 800,
-      quality: 0.6,
+      quality: 0.5,         // Lower quality to reduce payload size
       onProgress: (progress, message) => {
-        setStepInfo({ step: "uploading", progress, message, canLeave: false });
+        // Map extraction to 5-60% progress
+        const mappedProgress = 5 + Math.round((progress / 100) * 55);
+        setStepInfo({ step: "uploading", progress: mappedProgress, message, canLeave: false });
       },
     });
 
@@ -177,26 +179,49 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       throw new Error("No frames could be extracted from video");
     }
 
-    console.log(`📸 Extracted ${frames.length} frames, sending to API...`);
+    console.log(`📸 Extracted ${frames.length} frames`);
     
-    // Step 2: Send frames to API for processing
-    setStepInfo({ step: "processing", progress: 85, message: `Processing ${frames.length} frames with AI...`, canLeave: false });
-    
-    const response = await fetch("/api/process-frames", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ frames }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Processing failed: ${errorText}`);
+    // Step 2: Split frames into chunks to avoid payload limit (max ~25 frames per request ≈ 2MB)
+    const FRAMES_PER_REQUEST = 25;
+    const chunks: string[][] = [];
+    for (let i = 0; i < frames.length; i += FRAMES_PER_REQUEST) {
+      chunks.push(frames.slice(i, i + FRAMES_PER_REQUEST));
     }
-
-    const result = await response.json();
-    console.log("Processing result:", result);
     
-    return result;
+    console.log(`📦 Split into ${chunks.length} API requests`);
+    
+    // Step 3: Send each chunk to API and aggregate results
+    let totalAdded = 0;
+    let totalExtracted = 0;
+    
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const progress = 60 + Math.round(((i + 1) / chunks.length) * 35);
+      setStepInfo({ 
+        step: "processing", 
+        progress, 
+        message: `Processing batch ${i + 1}/${chunks.length} (${chunk.length} frames)...`, 
+        canLeave: false 
+      });
+      
+      const response = await fetch("/api/process-frames", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ frames: chunk }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Processing failed on batch ${i + 1}: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log(`Batch ${i + 1} result:`, result);
+      totalAdded += result.added || 0;
+      totalExtracted += result.totalExtracted || 0;
+    }
+    
+    return { added: totalAdded, totalExtracted };
   };
 
   const handleUpload = async () => {
