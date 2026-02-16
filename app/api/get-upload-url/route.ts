@@ -23,6 +23,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Check if R2 is configured
+  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
+    console.error("R2 not configured:", { 
+      hasAccountId: !!R2_ACCOUNT_ID, 
+      hasAccessKey: !!R2_ACCESS_KEY_ID, 
+      hasSecretKey: !!R2_SECRET_ACCESS_KEY 
+    });
+    return NextResponse.json(
+      { error: "Storage not configured" },
+      { status: 500 }
+    );
+  }
+
   try {
     const { filename, contentType } = await request.json();
     
@@ -45,15 +58,17 @@ export async function POST(request: Request) {
     // Public URL for the object (R2.dev subdomain)
     const publicUrl = `https://${R2_BUCKET_NAME}.${R2_ACCOUNT_ID}.r2.dev/${key}`;
     
+    console.log("Generated presigned URL for:", key);
+    
     return NextResponse.json({
       presignedUrl,
       publicUrl,
       key,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error generating presigned URL:", error);
     return NextResponse.json(
-      { error: "Failed to generate upload URL" },
+      { error: "Failed to generate upload URL: " + error.message },
       { status: 500 }
     );
   }
