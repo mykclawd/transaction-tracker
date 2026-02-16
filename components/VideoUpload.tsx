@@ -211,25 +211,44 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       uploadBatches.push(frames.slice(i, i + FRAMES_PER_UPLOAD));
     }
     
-    // Upload batches in parallel, collect job IDs (each batch creates a job)
-    const uploadPromises = uploadBatches.map(async (batch, i) => {
-      const response = await fetch("/api/upload-frames", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ frames: batch }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Upload failed on batch ${i + 1}: ${errorText}`);
-      }
-
-      const result = await response.json();
-      console.log(`📤 Batch ${i + 1}/${uploadBatches.length} uploaded, job: ${result.jobId}`);
-      return result.jobId;
-    });
+    // Upload batches with controlled concurrency (max 3 at a time to avoid 405 errors)
+    const MAX_CONCURRENT = 3;
+    const jobIds: string[] = [];
     
-    const jobIds = await Promise.all(uploadPromises);
+    for (let i = 0; i < uploadBatches.length; i += MAX_CONCURRENT) {
+      const batchGroup = uploadBatches.slice(i, i + MAX_CONCURRENT);
+      const groupStartIdx = i;
+      
+      const groupPromises = batchGroup.map(async (batch, groupIdx) => {
+        const batchIdx = groupStartIdx + groupIdx;
+        const response = await fetch("/api/upload-frames", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ frames: batch }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Upload failed on batch ${batchIdx + 1}: ${errorText}`);
+        }
+
+        const result = await response.json();
+        console.log(`📤 Batch ${batchIdx + 1}/${uploadBatches.length} uploaded, job: ${result.jobId}`);
+        return result.jobId;
+      });
+      
+      const groupResults = await Promise.all(groupPromises);
+      jobIds.push(...groupResults);
+      
+      // Update progress
+      const progress = 55 + Math.round((jobIds.length / uploadBatches.length) * 15);
+      setStepInfo({ 
+        step: "uploading", 
+        progress, 
+        message: `Uploading batch ${Math.min(i + MAX_CONCURRENT, uploadBatches.length)}/${uploadBatches.length}...`, 
+        canLeave: false 
+      });
+    }
     console.log(`✅ Created ${jobIds.length} background jobs`);
     
     // Return the first job ID for polling (all jobs will be processed)

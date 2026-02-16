@@ -17,6 +17,11 @@ const r2Client = new S3Client({
   },
 });
 
+// Handle preflight requests
+export async function OPTIONS() {
+  return new Response(null, { status: 200 });
+}
+
 export async function POST(request: Request) {
   const { userId } = await auth();
   if (!userId) {
