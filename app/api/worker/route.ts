@@ -1,7 +1,7 @@
 import { pool, generateTransactionId, parseTransactionDate, getUserMerchantCategory, getGlobalMerchantCategory, setGlobalMerchantCategory } from "@/lib/db";
 import { getMerchantCategory, categorizeByCommonName } from "@/lib/places";
 import OpenAI from "openai";
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -224,81 +224,41 @@ Return ONLY a valid JSON array. Example:
   }
 }
 
-// Legacy: extract from full video
+// Extract from full video using Clawd's Gemini-powered video extractor service
+const VIDEO_EXTRACTOR_URL = process.env.VIDEO_EXTRACTOR_URL || 'http://3.148.166.254:3456/api/extract-transactions';
+const VIDEO_EXTRACTOR_API_KEY = process.env.VIDEO_EXTRACTOR_API_KEY;
+
 async function extractTransactionsFromVideo(base64Video: string): Promise<Transaction[]> {
-  const response = await withRetry(() => openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      {
-        role: "system",
-        content: `You are a transaction extraction specialist. Analyze this video showing credit card transactions and extract EVERY SINGLE TRANSACTION visible.
-
-Extract these fields for each transaction:
-- merchant_name (string) - the business name
-- transaction_date (format MM/DD/YYYY) - convert any date format
-- amount_spent (number) - the dollar amount spent
-- bitcoin_rewards (number) - the USDC value shown in the "BTC Rewards" column
-
-CRITICAL RULES:
-1. EXTRACT EVERY TRANSACTION YOU SEE - do not skip any
-2. IGNORE any transactions marked as "pending" or "Pending"
-3. IGNORE "Payment made" or "Payment received" entries
-4. The "BTC Rewards" column shows a USDC value - extract just the number
-
-Return ONLY a valid JSON array.`,
-      },
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: "Extract all credit card transactions from this video. Include merchant name, date, amount spent, and BTC Rewards in USDC.",
-          },
-          {
-            type: "input_video" as any,
-            input_video: {
-              data: base64Video,
-              format: "mp4",
-            },
-          } as any,
-        ],
-      },
-    ],
-    max_tokens: 8000,
-  }));
-
-  const content = response.choices[0].message.content;
-  if (!content) {
-    throw new Error("No response from OpenAI");
+  if (!VIDEO_EXTRACTOR_API_KEY) {
+    throw new Error("VIDEO_EXTRACTOR_API_KEY not configured");
   }
 
-  // Try to extract JSON array - handle various formats
-  let jsonStr: string | null = null;
+  console.log(`🎬 Sending video to Gemini extractor service...`);
+  const startTime = Date.now();
+
+  const response = await fetch(VIDEO_EXTRACTOR_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': VIDEO_EXTRACTOR_API_KEY,
+    },
+    body: JSON.stringify({ video: base64Video }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Video extraction failed: ${response.statusText}`);
+  }
+
+  const data = await response.json();
   
-  const jsonMatch = content.match(/\[[\s\S]*\]/);
-  if (jsonMatch) {
-    jsonStr = jsonMatch[0];
-  }
-  
-  if (!jsonStr) {
-    const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (codeBlockMatch) {
-      const innerMatch = codeBlockMatch[1].match(/\[[\s\S]*\]/);
-      if (innerMatch) {
-        jsonStr = innerMatch[0];
-      }
-    }
-  }
-  
-  if (!jsonStr) {
-    const lowerContent = content.toLowerCase();
-    if (lowerContent.includes("no transaction") || lowerContent.includes("empty")) {
-      return [];
-    }
-    throw new Error("Could not parse transactions from response: " + content.substring(0, 200));
+  if (!data.success) {
+    throw new Error(data.error || 'Video extraction failed');
   }
 
-  return JSON.parse(jsonStr) as Transaction[];
+  console.log(`✅ Gemini extracted ${data.count} transactions in ${data.processingMs}ms (total: ${Date.now() - startTime}ms)`);
+  
+  return data.transactions;
 }
 
 async function processJob(job: any) {
@@ -441,12 +401,38 @@ async function processJob(job: any) {
     );
 
     console.log(`✅ Job ${id} completed: ${added} added, ${duplicates} duplicates, $${totalRewards.toFixed(2)} in BTC rewards`);
+    
+    // Cleanup: delete video from R2 after successful processing
+    if (payload.videoKey) {
+      try {
+        await r2Client.send(new DeleteObjectCommand({
+          Bucket: R2_BUCKET_NAME,
+          Key: payload.videoKey,
+        }));
+        console.log(`🗑️ Deleted video from R2: ${payload.videoKey}`);
+      } catch (cleanupErr: any) {
+        console.warn(`⚠️ Failed to cleanup R2 video: ${cleanupErr.message}`);
+      }
+    }
   } catch (error: any) {
     console.error(`❌ Job ${id} failed:`, error.message);
     await pool.query(
       `UPDATE jobs SET status = 'failed', error = $1, completed_at = NOW() WHERE id = $2`,
       [error.message, id]
     );
+    
+    // Cleanup: also delete video on failure (don't leave orphans)
+    if (payload.videoKey) {
+      try {
+        await r2Client.send(new DeleteObjectCommand({
+          Bucket: R2_BUCKET_NAME,
+          Key: payload.videoKey,
+        }));
+        console.log(`🗑️ Deleted video from R2 after failure: ${payload.videoKey}`);
+      } catch (cleanupErr: any) {
+        console.warn(`⚠️ Failed to cleanup R2 video: ${cleanupErr.message}`);
+      }
+    }
   }
 }
 
