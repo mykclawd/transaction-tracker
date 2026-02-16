@@ -48,9 +48,9 @@ export function SpendingChart({ transactions }: SpendingChartProps) {
         <CardTitle>Spending Over Time</CardTitle>
         <CardDescription>Daily spending for the last 30 days with activity</CardDescription>
       </CardHeader>
-      <CardContent>
-        <ChartContainer config={chartConfig} className="h-[250px] w-full">
-          <LineChart data={data} margin={{ left: 12, right: 12 }}>
+      <CardContent className="overflow-hidden">
+        <ChartContainer config={chartConfig} className="h-[200px] sm:h-[250px] w-full max-w-full">
+          <LineChart data={data} margin={{ left: -10, right: 10 }}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis
               dataKey="date"

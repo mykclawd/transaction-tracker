@@ -186,8 +186,8 @@ export default function Dashboard() {
           />
         </TabsContent>
 
-        <TabsContent value="charts" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
+        <TabsContent value="charts" className="space-y-4 overflow-hidden">
+          <div className="grid gap-4 md:grid-cols-2 overflow-hidden">
             <SpendingChart transactions={transactions} />
             <CategoryBreakdown transactions={transactions} />
           </div>

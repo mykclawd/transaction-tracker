@@ -52,9 +52,9 @@ export function MonthlySpending({ transactions }: MonthlySpendingProps) {
         <CardTitle>Monthly Spending</CardTitle>
         <CardDescription>Transaction totals by month</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
-        <ChartContainer config={chartConfig} className="h-[280px] w-full">
-          <BarChart data={data} margin={{ left: 12, right: 12 }}>
+      <CardContent className="space-y-6 overflow-hidden">
+        <ChartContainer config={chartConfig} className="h-[220px] sm:h-[280px] w-full max-w-full">
+          <BarChart data={data} margin={{ left: -10, right: 10 }}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis
               dataKey="label"

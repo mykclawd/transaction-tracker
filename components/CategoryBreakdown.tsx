@@ -85,8 +85,8 @@ export function CategoryBreakdown({ transactions }: CategoryBreakdownProps) {
         <CardTitle>Spending by Category</CardTitle>
         <CardDescription>Breakdown of where your money goes</CardDescription>
       </CardHeader>
-      <CardContent>
-        <ChartContainer config={chartConfig} className="mx-auto aspect-square h-[300px]">
+      <CardContent className="overflow-hidden">
+        <ChartContainer config={chartConfig} className="mx-auto aspect-square h-[250px] sm:h-[300px] max-w-full">
           <PieChart>
             <ChartTooltip
               content={
