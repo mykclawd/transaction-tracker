@@ -7,14 +7,14 @@ import { Upload, Brain, PieChart, Smartphone, Zap, Shield } from "lucide-react";
 
 export function LandingPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white dark:from-zinc-950 dark:to-zinc-900">
+    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white dark:from-zinc-950 dark:to-zinc-900 overflow-x-hidden">
       {/* Hero Section */}
       <section className="relative overflow-hidden">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
           <div className="grid gap-12 lg:grid-cols-2 lg:gap-8 items-center">
             {/* Left: Text */}
             <div className="text-center lg:text-left">
-              <h1 className="text-4xl font-bold tracking-tight text-zinc-900 dark:text-white sm:text-5xl lg:text-6xl">
+              <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-white sm:text-5xl lg:text-6xl">
                 Track expenses with{" "}
                 <span className="text-blue-600">AI magic</span>
               </h1>
@@ -40,15 +40,15 @@ export function LandingPage() {
             </div>
             
             {/* Right: Hero Image */}
-            <div className="relative">
-              <div className="relative mx-auto max-w-md lg:max-w-none">
+            <div className="relative px-4 sm:px-0">
+              <div className="relative mx-auto max-w-xs sm:max-w-md lg:max-w-none">
                 <img
                   src="/hero.jpg"
                   alt="Spend app showing transaction tracking"
-                  className="rounded-3xl shadow-2xl"
+                  className="rounded-3xl shadow-2xl w-full"
                 />
                 {/* Floating elements */}
-                <div className="absolute -top-4 -right-4 bg-green-500 text-white px-4 py-2 rounded-full text-sm font-semibold shadow-lg">
+                <div className="absolute -top-2 right-0 sm:-top-4 sm:-right-4 bg-green-500 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-xs sm:text-sm font-semibold shadow-lg">
                   ✨ AI-Powered
                 </div>
               </div>
@@ -106,18 +106,18 @@ export function LandingPage() {
       </section>
 
       {/* Features */}
-      <section className="py-16">
+      <section className="py-16 overflow-hidden">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="grid gap-12 lg:grid-cols-2 items-center">
-            <div>
+            <div className="order-2 lg:order-1">
               <img
                 src="/app-icon.jpg"
                 alt="Spend features"
-                className="rounded-2xl shadow-xl max-w-sm mx-auto"
+                className="rounded-2xl shadow-xl w-full max-w-xs sm:max-w-sm mx-auto"
               />
             </div>
-            <div>
-              <h2 className="text-3xl font-bold text-zinc-900 dark:text-white mb-8">
+            <div className="order-1 lg:order-2">
+              <h2 className="text-2xl sm:text-3xl font-bold text-zinc-900 dark:text-white mb-8 text-center lg:text-left">
                 Everything you need to track spending
               </h2>
               <div className="space-y-6">
