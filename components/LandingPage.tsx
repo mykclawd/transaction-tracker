@@ -35,7 +35,7 @@ export function LandingPage() {
                 </Link>
               </div>
               <p className="mt-4 text-sm text-zinc-500">
-                No credit card required • Free forever
+                No credit card required • Free to start
               </p>
             </div>
             
