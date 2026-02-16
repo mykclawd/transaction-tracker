@@ -89,6 +89,33 @@ export default function Dashboard() {
     }
   };
 
+  const handleAddTransaction = async (transaction: {
+    merchant_name: string;
+    transaction_date: string;
+    amount_spent: number;
+    bitcoin_rewards: number;
+    category: string | null;
+  }) => {
+    try {
+      const response = await fetch("/api/transactions/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(transaction),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to add transaction");
+      }
+      
+      const data = await response.json();
+      setTransactions((prev) => [data.transaction, ...prev]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add transaction");
+      throw err; // Re-throw so the dialog knows it failed
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -154,6 +181,7 @@ export default function Dashboard() {
             transactions={transactions}
             onDelete={handleDeleteTransaction}
             onUpdateCategory={handleUpdateCategory}
+            onAddTransaction={handleAddTransaction}
             merchantCategories={merchantCategories}
           />
         </TabsContent>

@@ -18,14 +18,33 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Trash2, Search } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Trash2, Search, Plus } from "lucide-react";
+
+interface NewTransactionInput {
+  merchant_name: string;
+  transaction_date: string;
+  amount_spent: number;
+  bitcoin_rewards: number;
+  category: string | null;
+}
 
 interface TransactionListProps {
   transactions: Transaction[];
   onDelete: (id: string) => void;
   onUpdateCategory: (id: string, category: string | null) => void;
+  onAddTransaction?: (transaction: NewTransactionInput) => Promise<void>;
   merchantCategories?: Record<string, string>;
 }
 
@@ -33,11 +52,23 @@ export function TransactionList({
   transactions,
   onDelete,
   onUpdateCategory,
+  onAddTransaction,
   merchantCategories = {},
 }: TransactionListProps) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"date" | "amount" | "merchant">("date");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Form state for new transaction
+  const [newTransaction, setNewTransaction] = useState({
+    merchant_name: "",
+    transaction_date: new Date().toISOString().split("T")[0],
+    amount_spent: "",
+    bitcoin_rewards: "0",
+    category: "",
+  });
 
   const filteredTransactions = transactions
     .filter(
@@ -60,6 +91,37 @@ export function TransactionList({
       }
       return sortOrder === "asc" ? comparison : -comparison;
     });
+
+  const handleAddTransaction = async () => {
+    if (!onAddTransaction || !newTransaction.merchant_name || !newTransaction.amount_spent) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await onAddTransaction({
+        merchant_name: newTransaction.merchant_name,
+        transaction_date: newTransaction.transaction_date,
+        amount_spent: parseFloat(newTransaction.amount_spent),
+        bitcoin_rewards: parseFloat(newTransaction.bitcoin_rewards) || 0,
+        category: newTransaction.category || null,
+      });
+      
+      // Reset form and close dialog
+      setNewTransaction({
+        merchant_name: "",
+        transaction_date: new Date().toISOString().split("T")[0],
+        amount_spent: "",
+        bitcoin_rewards: "0",
+        category: "",
+      });
+      setIsAddDialogOpen(false);
+    } catch (err) {
+      console.error("Failed to add transaction:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -92,6 +154,122 @@ export function TransactionList({
         >
           {sortOrder === "asc" ? "↑ Asc" : "↓ Desc"}
         </Button>
+        
+        {onAddTransaction && (
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Transaction
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Add Transaction</DialogTitle>
+                <DialogDescription>
+                  Manually add a transaction that wasn't captured from the video.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="merchant">Merchant Name *</Label>
+                  <Input
+                    id="merchant"
+                    placeholder="e.g., Starbucks"
+                    value={newTransaction.merchant_name}
+                    onChange={(e) =>
+                      setNewTransaction({ ...newTransaction, merchant_name: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="date">Transaction Date *</Label>
+                  <Input
+                    id="date"
+                    type="date"
+                    value={newTransaction.transaction_date}
+                    onChange={(e) =>
+                      setNewTransaction({ ...newTransaction, transaction_date: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="amount">Amount ($) *</Label>
+                    <Input
+                      id="amount"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={newTransaction.amount_spent}
+                      onChange={(e) =>
+                        setNewTransaction({ ...newTransaction, amount_spent: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="rewards">BTC Rewards ($)</Label>
+                    <Input
+                      id="rewards"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={newTransaction.bitcoin_rewards}
+                      onChange={(e) =>
+                        setNewTransaction({ ...newTransaction, bitcoin_rewards: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="category">Category</Label>
+                  <Select
+                    value={newTransaction.category || "uncategorized"}
+                    onValueChange={(value) =>
+                      setNewTransaction({
+                        ...newTransaction,
+                        category: value === "uncategorized" ? "" : value,
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="uncategorized">Uncategorized</SelectItem>
+                      {TRANSACTION_CATEGORIES.map((cat) => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsAddDialogOpen(false)}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleAddTransaction}
+                  disabled={
+                    isSubmitting ||
+                    !newTransaction.merchant_name ||
+                    !newTransaction.amount_spent
+                  }
+                >
+                  {isSubmitting ? "Adding..." : "Add Transaction"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <div className="rounded-md border">
@@ -110,7 +288,7 @@ export function TransactionList({
             {filteredTransactions.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-8 text-zinc-500">
-                  No transactions found. Upload a video to get started!
+                  No transactions found. Upload a video or add one manually!
                 </TableCell>
               </TableRow>
             ) : (
