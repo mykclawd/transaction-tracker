@@ -190,36 +190,36 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     
     console.log(`📦 Split into ${chunks.length} API requests`);
     
-    // Step 3: Send each chunk to API and aggregate results
-    let totalAdded = 0;
-    let totalExtracted = 0;
+    // Step 3: Send all chunks to API in parallel
+    setStepInfo({ 
+      step: "processing", 
+      progress: 65, 
+      message: `Processing ${chunks.length} batches in parallel...`, 
+      canLeave: false 
+    });
     
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      const progress = 60 + Math.round(((i + 1) / chunks.length) * 35);
-      setStepInfo({ 
-        step: "processing", 
-        progress, 
-        message: `Processing batch ${i + 1}/${chunks.length} (${chunk.length} frames)...`, 
-        canLeave: false 
-      });
-      
-      const response = await fetch("/api/process-frames", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ frames: chunk }),
-      });
+    const results = await Promise.all(
+      chunks.map(async (chunk, i) => {
+        const response = await fetch("/api/process-frames", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ frames: chunk }),
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Processing failed on batch ${i + 1}: ${errorText}`);
-      }
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Processing failed on batch ${i + 1}: ${errorText}`);
+        }
 
-      const result = await response.json();
-      console.log(`Batch ${i + 1} result:`, result);
-      totalAdded += result.added || 0;
-      totalExtracted += result.totalExtracted || 0;
-    }
+        const result = await response.json();
+        console.log(`Batch ${i + 1}/${chunks.length} result:`, result);
+        return result;
+      })
+    );
+    
+    // Aggregate results
+    const totalAdded = results.reduce((sum, r) => sum + (r.added || 0), 0);
+    const totalExtracted = results.reduce((sum, r) => sum + (r.totalExtracted || 0), 0);
     
     return { added: totalAdded, totalExtracted };
   };
