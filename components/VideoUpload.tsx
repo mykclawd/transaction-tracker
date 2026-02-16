@@ -238,7 +238,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       setStepInfo({ 
         step: "completed", 
         progress: 100, 
-        message: `Found ${totalTransactions} transaction${totalTransactions !== 1 ? 's' : ''} from ${totalBatches} batch${totalBatches > 1 ? 'es' : ''}!`,
+        message: `Found ${totalTransactions} transaction${totalTransactions !== 1 ? 's' : ''}!`,
         canLeave: true
       });
       onUploadComplete();

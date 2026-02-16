@@ -64,9 +64,6 @@ export async function POST(request: Request) {
   }
 }
 
-export const config = {
-  api: {
-    bodyParser: false, // Disable body parser to handle FormData
-    responseLimit: '50mb',
-  },
-};
+// Route segment config for Next.js App Router
+export const runtime = 'nodejs';
+export const maxDuration = 300; // 5 minutes for Pro plan
