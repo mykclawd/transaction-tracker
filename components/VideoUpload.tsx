@@ -49,8 +49,8 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     };
   }, []);
 
-  // Fetch background jobs on mount and poll for updates
-  const fetchBackgroundJobs = async () => {
+  // Fetch background jobs - only poll when there are active jobs
+  const fetchBackgroundJobs = async (startPolling = false) => {
     try {
       const response = await fetch("/api/jobs/status");
       if (response.ok) {
@@ -58,18 +58,32 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         const activeJobs = (data.jobs || []).filter((j: BackgroundJob) => 
           j.status === "pending" || j.status === "processing"
         );
+        const hadActiveJobs = backgroundJobs.length > 0;
         setBackgroundJobs(activeJobs);
         
-        // Trigger worker if there are pending jobs - use multiple triggers to ensure processing starts
+        // Trigger worker if there are pending jobs
         if (activeJobs.filter((j: BackgroundJob) => j.status === 'pending').length > 0) {
-          // Trigger 2 workers to process pending jobs (Vercel Pro allows 2 concurrent)
           fetch("/api/worker", { method: "POST" }).catch(() => {});
           setTimeout(() => fetch("/api/worker", { method: "POST" }).catch(() => {}), 500);
         }
         
         // Refresh transactions when jobs complete
-        if (activeJobs.length === 0 && backgroundJobs.length > 0) {
+        if (activeJobs.length === 0 && hadActiveJobs) {
           onUploadComplete();
+        }
+        
+        // Start/stop polling based on active jobs
+        if (activeJobs.length > 0 || startPolling) {
+          // Start polling if not already polling
+          if (!backgroundPollRef.current) {
+            backgroundPollRef.current = setInterval(() => fetchBackgroundJobs(), 1500);
+          }
+        } else {
+          // Stop polling when no active jobs
+          if (backgroundPollRef.current) {
+            clearInterval(backgroundPollRef.current);
+            backgroundPollRef.current = null;
+          }
         }
       }
     } catch (err) {
@@ -77,12 +91,13 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     }
   };
 
+  // Initial check only on mount (no continuous polling until needed)
   useEffect(() => {
     fetchBackgroundJobs();
-    backgroundPollRef.current = setInterval(fetchBackgroundJobs, 1500); // Poll faster for Pro
     return () => {
       if (backgroundPollRef.current) {
         clearInterval(backgroundPollRef.current);
+        backgroundPollRef.current = null;
       }
     };
   }, []);
@@ -244,9 +259,12 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
       
-      // Trigger worker to start processing
+      // Trigger worker to start processing and start polling
       fetch("/api/worker", { method: "POST" }).catch(() => {});
       setTimeout(() => fetch("/api/worker", { method: "POST" }).catch(() => {}), 500);
+      
+      // Start polling for background job status
+      fetchBackgroundJobs(true);
       
     } catch (err) {
       console.error("Upload error:", err);
