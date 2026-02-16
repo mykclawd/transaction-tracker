@@ -429,10 +429,38 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
           )}
         </div>
         
-        {/* Tip */}
-        <p className="text-xs text-muted-foreground">
-          💡 For best results, keep videos 30 seconds or less. Multiple shorter uploads work better than one long video.
-        </p>
+        {/* Tips */}
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            💡 For best results, keep videos 30 seconds or less. Multiple shorter uploads work better than one long video.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            💳 <strong>Coinbase Card users:</strong> Use the filters for &quot;Purchases&quot; and &quot;Refunds&quot; for the most accurate results.
+          </p>
+        </div>
+        
+        {/* Example Video */}
+        <details className="group">
+          <summary className="text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors list-none flex items-center gap-2">
+            <span className="text-xs">▶</span>
+            <span className="group-open:hidden">Show example recording</span>
+            <span className="hidden group-open:inline">Hide example</span>
+          </summary>
+          <div className="mt-3 rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-900 p-2">
+            <video
+              src="/example-recording.mp4"
+              controls
+              playsInline
+              className="w-full max-w-[280px] mx-auto rounded-lg"
+              poster=""
+            >
+              Your browser does not support the video tag.
+            </video>
+            <p className="text-xs text-center text-muted-foreground mt-2">
+              Scroll slowly through your transaction list while recording
+            </p>
+          </div>
+        </details>
 
         {/* Progress Steps */}
         {stepInfo.step !== "idle" && (

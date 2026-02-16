@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { pool } from "@/lib/db";
+import { checkFrameLimit, recordFrameUsage } from "@/lib/rateLimit";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
 
@@ -35,7 +36,14 @@ export async function POST(request: Request) {
       return Response.json({ error: "No frames provided" }, { status: 400 });
     }
 
-    console.log(`📤 Uploading ${frames.length} frames to R2 for user ${userId}`);
+    // Check rate limit before processing
+    const { allowed, remaining, error } = await checkFrameLimit(userId, frames.length);
+    if (!allowed) {
+      console.log(`🚫 Rate limit exceeded for user ${userId}: ${error}`);
+      return Response.json({ error, remaining }, { status: 429 });
+    }
+
+    console.log(`📤 Uploading ${frames.length} frames to R2 for user ${userId} (${remaining} remaining today)`);
     const startTime = Date.now();
 
     // Generate a unique job prefix
@@ -75,9 +83,13 @@ export async function POST(request: Request) {
     const jobId = result.rows[0].id;
     console.log(`📋 Created job ${jobId} with ${frameKeys.length} frames`);
 
+    // Record usage for rate limiting
+    await recordFrameUsage(userId, frameKeys.length);
+
     return Response.json({
       jobId,
       frameCount: frameKeys.length,
+      remaining,
       message: "Frames uploaded, processing queued",
     });
   } catch (error: any) {

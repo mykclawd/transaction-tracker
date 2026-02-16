@@ -56,10 +56,16 @@ export function TransactionList({
   merchantCategories = {},
 }: TransactionListProps) {
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"date" | "amount" | "merchant">("date");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Get unique categories from transactions
+  const uniqueCategories = Array.from(
+    new Set(transactions.map((t) => t.category || "Uncategorized"))
+  ).sort();
   
   // Form state for new transaction
   const [newTransaction, setNewTransaction] = useState({
@@ -71,11 +77,20 @@ export function TransactionList({
   });
 
   const filteredTransactions = transactions
-    .filter(
-      (t) =>
+    .filter((t) => {
+      // Text search filter
+      const matchesSearch =
         t.merchant_name.toLowerCase().includes(search.toLowerCase()) ||
-        (t.category?.toLowerCase() || "").includes(search.toLowerCase())
-    )
+        (t.category?.toLowerCase() || "").includes(search.toLowerCase());
+      
+      // Category filter
+      const matchesCategory =
+        categoryFilter === "all" ||
+        (categoryFilter === "Uncategorized" && !t.category) ||
+        t.category === categoryFilter;
+      
+      return matchesSearch && matchesCategory;
+    })
     .sort((a, b) => {
       let comparison = 0;
       switch (sortBy) {
@@ -127,12 +142,31 @@ export function TransactionList({
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
         {/* Buttons row - first on mobile */}
-        <div className="flex items-center gap-2 order-1 sm:order-2 sm:flex-shrink-0">
+        <div className="flex items-center gap-2 order-1 sm:order-2 sm:flex-shrink-0 flex-wrap">
+          <Select
+            value={categoryFilter}
+            onValueChange={setCategoryFilter}
+          >
+            <SelectTrigger className="w-36 sm:w-44">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              <SelectItem value="Uncategorized">Uncategorized</SelectItem>
+              {uniqueCategories
+                .filter((c) => c !== "Uncategorized")
+                .map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {category}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
           <Select
             value={sortBy}
             onValueChange={(v) => setSortBy(v as "date" | "amount" | "merchant")}
           >
-            <SelectTrigger className="w-32 sm:w-40">
+            <SelectTrigger className="w-28 sm:w-32">
               <SelectValue placeholder="Sort by" />
             </SelectTrigger>
             <SelectContent>
