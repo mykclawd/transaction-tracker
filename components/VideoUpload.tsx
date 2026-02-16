@@ -26,7 +26,8 @@ interface BackgroundJob {
 }
 
 export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [currentFileIndex, setCurrentFileIndex] = useState<number>(0);
   const [stepInfo, setStepInfo] = useState<StepInfo>({ step: "idle", progress: 0, message: "", canLeave: true });
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobResult, setJobResult] = useState<any>(null);
@@ -148,17 +149,24 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
   }, [jobId, stepInfo.step, onUploadComplete]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0];
-    if (selected) {
+    const selectedFiles = Array.from(e.target.files || []);
+    if (selectedFiles.length === 0) return;
+    
+    const validFiles: File[] = [];
+    for (const selected of selectedFiles) {
       if (!selected.type.startsWith("video/")) {
-        setError("Please select a video file");
-        return;
+        setError(`"${selected.name}" is not a video file`);
+        continue;
       }
       if (selected.size > 500 * 1024 * 1024) {
-        setError("Video must be under 500MB");
-        return;
+        setError(`"${selected.name}" exceeds 500MB limit`);
+        continue;
       }
-      setFile(selected);
+      validFiles.push(selected);
+    }
+    
+    if (validFiles.length > 0) {
+      setFiles(prev => [...prev, ...validFiles]);
       setError(null);
       resetState();
     }
@@ -167,6 +175,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
   const resetState = () => {
     setJobId(null);
     setJobResult(null);
+    setCurrentFileIndex(0);
     setStepInfo({ step: "idle", progress: 0, message: "" });
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
@@ -256,26 +265,42 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
   };
 
   const handleUpload = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
 
     setError(null);
-    resetState();
+    setJobId(null);
+    setJobResult(null);
+    setStepInfo({ step: "idle", progress: 0, message: "" });
 
     try {
-      // Process video: extract frames client-side, upload to R2, get job ID
-      const newJobId = await processVideo(file);
+      // Process each video sequentially
+      for (let i = 0; i < files.length; i++) {
+        setCurrentFileIndex(i);
+        const file = files[i];
+        const fileLabel = files.length > 1 ? ` (${i + 1}/${files.length})` : "";
+        
+        setStepInfo({ 
+          step: "uploading", 
+          progress: 5, 
+          message: `Processing "${file.name}"${fileLabel}...`,
+          canLeave: false
+        });
+        
+        // Process video: extract frames client-side, upload to R2, get job ID
+        await processVideo(file);
+      }
       
-      // Set job ID to start polling
-      setJobId(newJobId);
+      // All files uploaded
       setStepInfo({ 
         step: "processing", 
         progress: 70, 
-        message: "Processing in background... you can leave this page and come back later.",
+        message: `${files.length} video${files.length > 1 ? 's' : ''} uploaded! Processing in background... you can leave this page.`,
         canLeave: true
       });
       
-      // Clear file input
-      setFile(null);
+      // Clear files
+      setFiles([]);
+      setCurrentFileIndex(0);
       if (inputRef.current) inputRef.current.value = "";
       
       // Trigger worker to start processing and start polling
@@ -293,8 +318,12 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     }
   };
 
-  const clearFile = () => {
-    setFile(null);
+  const clearFile = (index?: number) => {
+    if (index !== undefined) {
+      setFiles(prev => prev.filter((_, i) => i !== index));
+    } else {
+      setFiles([]);
+    }
     resetState();
     setError(null);
     if (inputRef.current) inputRef.current.value = "";
@@ -330,60 +359,73 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* File Input */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-          <input
-            ref={inputRef}
-            type="file"
-            accept="video/*"
-            onChange={handleFileSelect}
-            className="hidden"
-            id="video-upload"
-            disabled={isProcessing}
-          />
-          <label
-            htmlFor="video-upload"
-            className={`flex cursor-pointer items-center gap-2 rounded-lg border-2 border-dashed border-zinc-300 p-4 hover:border-zinc-400 dark:border-zinc-700 dark:hover:border-zinc-600 ${
-              isProcessing ? "opacity-50 cursor-not-allowed" : ""
-            }`}
-          >
-            {file ? (
-              <>
-                <FileVideo className="h-5 w-5 text-green-500" />
-                <span className="text-sm font-medium">{file.name}</span>
-                <span className="text-xs text-zinc-500">
-                  ({(file.size / 1024 / 1024).toFixed(1)} MB)
-                </span>
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    clearFile();
-                  }}
-                  className="ml-2 rounded-full p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                  disabled={isProcessing}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </>
-            ) : (
-              <>
-                <Upload className="h-5 w-5" />
-                <span className="text-sm font-medium">
-                  {stepInfo.step === "completed" ? "Upload another video" : "Select video file"}
-                </span>
-              </>
+        <div className="space-y-3">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <input
+              ref={inputRef}
+              type="file"
+              accept="video/*"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+              id="video-upload"
+              disabled={isProcessing}
+            />
+            <label
+              htmlFor="video-upload"
+              className={`flex cursor-pointer items-center gap-2 rounded-lg border-2 border-dashed border-zinc-300 p-4 hover:border-zinc-400 dark:border-zinc-700 dark:hover:border-zinc-600 ${
+                isProcessing ? "opacity-50 cursor-not-allowed" : ""
+              }`}
+            >
+              <Upload className="h-5 w-5" />
+              <span className="text-sm font-medium">
+                {stepInfo.step === "completed" ? "Upload more videos" : files.length > 0 ? "Add more videos" : "Select video files"}
+              </span>
+            </label>
+            {files.length > 0 && (
+              <Button onClick={handleUpload} disabled={isProcessing} className="w-full sm:w-auto">
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing {currentFileIndex + 1}/{files.length}...
+                  </>
+                ) : (
+                  `Upload ${files.length} video${files.length > 1 ? 's' : ''}`
+                )}
+              </Button>
             )}
-          </label>
-          {file && (
-            <Button onClick={handleUpload} disabled={isProcessing} className="w-full sm:w-auto">
-              {isProcessing ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                "Upload & Process"
+          </div>
+          
+          {/* Selected Files List */}
+          {files.length > 0 && !isProcessing && (
+            <div className="space-y-2">
+              {files.map((file, index) => (
+                <div 
+                  key={`${file.name}-${index}`}
+                  className="flex items-center gap-2 rounded-lg bg-zinc-50 dark:bg-zinc-900 p-2 text-sm"
+                >
+                  <FileVideo className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  <span className="font-medium truncate flex-1">{file.name}</span>
+                  <span className="text-xs text-zinc-500 flex-shrink-0">
+                    {(file.size / 1024 / 1024).toFixed(1)} MB
+                  </span>
+                  <button
+                    onClick={() => clearFile(index)}
+                    className="rounded-full p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 flex-shrink-0"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+              {files.length > 1 && (
+                <button
+                  onClick={() => clearFile()}
+                  className="text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                >
+                  Clear all
+                </button>
               )}
-            </Button>
+            </div>
           )}
         </div>
         
