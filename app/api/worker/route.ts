@@ -300,14 +300,30 @@ async function processJob(job: any) {
     // Handle different payload types
     if (payload.videoUrl) {
       console.log(`🎬 Processing video from URL for job ${id}: ${payload.videoUrl}`);
-      // Fetch video from R2 URL
-      const videoResponse = await fetch(payload.videoUrl);
-      if (!videoResponse.ok) {
-        throw new Error(`Failed to fetch video: ${videoResponse.status}`);
+      try {
+        // Fetch video from R2 URL with timeout
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+        
+        const videoResponse = await fetch(payload.videoUrl, { signal: controller.signal });
+        clearTimeout(timeout);
+        
+        if (!videoResponse.ok) {
+          throw new Error(`Failed to fetch video: ${videoResponse.status} ${videoResponse.statusText}`);
+        }
+        
+        const contentLength = videoResponse.headers.get('content-length');
+        console.log(`📥 Downloading video: ${contentLength ? (parseInt(contentLength)/1024/1024).toFixed(2) + 'MB' : 'unknown size'}`);
+        
+        const videoBuffer = await videoResponse.arrayBuffer();
+        console.log(`✅ Downloaded ${(videoBuffer.byteLength/1024/1024).toFixed(2)}MB`);
+        
+        const base64Video = Buffer.from(videoBuffer).toString('base64');
+        rawTransactions = await extractTransactionsFromVideo(base64Video);
+      } catch (fetchError: any) {
+        console.error(`❌ Failed to fetch video from R2:`, fetchError.message);
+        throw new Error(`Failed to download video from storage: ${fetchError.message}`);
       }
-      const videoBuffer = await videoResponse.arrayBuffer();
-      const base64Video = Buffer.from(videoBuffer).toString('base64');
-      rawTransactions = await extractTransactionsFromVideo(base64Video);
     } else if (payload.frames && payload.frames.length > 0) {
       console.log(`📸 Processing ${payload.frames.length} frames for job ${id}`);
       rawTransactions = await extractTransactionsFromFrames(payload.frames);
