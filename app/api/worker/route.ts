@@ -1,12 +1,28 @@
 import { pool, generateTransactionId, parseTransactionDate, getUserMerchantCategory, getGlobalMerchantCategory, setGlobalMerchantCategory } from "@/lib/db";
 import { getMerchantCategory, categorizeByCommonName } from "@/lib/places";
 import OpenAI from "openai";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 const placesApiKey = process.env.GOOGLE_PLACES_API_KEY;
+
+// R2 client for downloading videos
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
+const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || "transaction-tracker";
+
+const r2Client = new S3Client({
+  region: "auto",
+  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: R2_ACCESS_KEY_ID || "",
+    secretAccessKey: R2_SECRET_ACCESS_KEY || "",
+  },
+});
 
 // Retry helper for rate limit errors
 async function withRetry<T>(
@@ -298,27 +314,35 @@ async function processJob(job: any) {
     let rawTransactions: Transaction[];
     
     // Handle different payload types
-    if (payload.videoUrl) {
-      console.log(`🎬 Processing video from URL for job ${id}: ${payload.videoUrl}`);
+    if (payload.videoKey) {
+      console.log(`🎬 Processing video from R2 for job ${id}: ${payload.videoKey}`);
       try {
-        // Fetch video from R2 URL with timeout
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+        const key = payload.videoKey;
         
-        const videoResponse = await fetch(payload.videoUrl, { signal: controller.signal });
-        clearTimeout(timeout);
+        console.log(`📥 Downloading from R2 bucket: ${key}`);
         
-        if (!videoResponse.ok) {
-          throw new Error(`Failed to fetch video: ${videoResponse.status} ${videoResponse.statusText}`);
+        // Download from R2 using S3 SDK (authenticated)
+        const getCommand = new GetObjectCommand({
+          Bucket: R2_BUCKET_NAME,
+          Key: key,
+        });
+        
+        const videoResponse = await r2Client.send(getCommand);
+        const contentLength = videoResponse.ContentLength;
+        console.log(`📥 Downloading video: ${contentLength ? (contentLength/1024/1024).toFixed(2) + 'MB' : 'unknown size'}`);
+        
+        // Convert stream to buffer
+        const chunks: Buffer[] = [];
+        const stream = videoResponse.Body as any;
+        
+        for await (const chunk of stream) {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         }
         
-        const contentLength = videoResponse.headers.get('content-length');
-        console.log(`📥 Downloading video: ${contentLength ? (parseInt(contentLength)/1024/1024).toFixed(2) + 'MB' : 'unknown size'}`);
+        const videoBuffer = Buffer.concat(chunks);
+        console.log(`✅ Downloaded ${(videoBuffer.length/1024/1024).toFixed(2)}MB`);
         
-        const videoBuffer = await videoResponse.arrayBuffer();
-        console.log(`✅ Downloaded ${(videoBuffer.byteLength/1024/1024).toFixed(2)}MB`);
-        
-        const base64Video = Buffer.from(videoBuffer).toString('base64');
+        const base64Video = videoBuffer.toString('base64');
         rawTransactions = await extractTransactionsFromVideo(base64Video);
       } catch (fetchError: any) {
         console.error(`❌ Failed to fetch video from R2:`, fetchError.message);

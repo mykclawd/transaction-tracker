@@ -163,7 +163,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     setStepInfo({ step: "uploading", progress: 5, message: "Getting upload URL...", canLeave: false });
     
     let presignedUrl: string;
-    let publicUrl: string;
+    let videoKey: string;
     
     try {
       const urlResponse = await fetch("/api/get-upload-url", {
@@ -183,8 +183,8 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
 
       const data = await urlResponse.json();
       presignedUrl = data.presignedUrl;
-      publicUrl = data.publicUrl;
-      console.log("Got presigned URL:", presignedUrl.substring(0, 100) + "...");
+      videoKey = data.key;
+      console.log("Got presigned URL for key:", videoKey);
     } catch (e: any) {
       console.error("Error getting presigned URL:", e);
       throw new Error(`Failed to get upload URL: ${e.message}`);
@@ -245,7 +245,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       const jobResponse = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoUrl: publicUrl }),
+        body: JSON.stringify({ videoKey }),
       });
 
       if (!jobResponse.ok) {

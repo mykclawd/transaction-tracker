@@ -12,17 +12,17 @@ export async function POST(request: Request) {
     const body = await request.json();
     const frames = body.frames || [];
     const video = body.video; // Legacy base64 support
-    const videoUrl = body.videoUrl; // New R2 URL support
+    const videoKey = body.videoKey; // New R2 key support
 
-    if (!frames.length && !video && !videoUrl) {
+    if (!frames.length && !video && !videoKey) {
       return NextResponse.json(
-        { error: "No frames, video, or videoUrl provided" },
+        { error: "No frames, video, or videoKey provided" },
         { status: 400 }
       );
     }
 
     // Create a job with the provided data
-    const payload = videoUrl ? { videoUrl } : frames.length > 0 ? { frames } : { video };
+    const payload = videoKey ? { videoKey } : frames.length > 0 ? { frames } : { video };
     
     const result = await pool.query(
       `INSERT INTO jobs (user_id, type, payload, status)

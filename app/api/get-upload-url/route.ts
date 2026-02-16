@@ -55,14 +55,11 @@ export async function POST(request: Request) {
     
     const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 }); // 5 min expiry
     
-    // Public URL for the object (R2.dev subdomain)
-    const publicUrl = `https://${R2_BUCKET_NAME}.${R2_ACCOUNT_ID}.r2.dev/${key}`;
-    
     console.log("Generated presigned URL for:", key);
     
+    // Return key so worker can download via S3 (no public URL needed)
     return NextResponse.json({
       presignedUrl,
-      publicUrl,
       key,
     });
   } catch (error: any) {
