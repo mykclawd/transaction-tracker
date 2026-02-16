@@ -10,11 +10,17 @@ import { TransactionList } from "@/components/TransactionList";
 import { SpendingChart } from "@/components/SpendingChart";
 import { CategoryBreakdown } from "@/components/CategoryBreakdown";
 import { MonthlySpending } from "@/components/MonthlySpending";
+import { LandingPage } from "@/components/LandingPage";
 import { Transaction } from "@/lib/types";
 import { Loader2 } from "lucide-react";
 
 export default function Dashboard() {
-  const { userId } = useAuth();
+  const { userId, isLoaded } = useAuth();
+  
+  // Show landing page for unauthenticated users
+  if (isLoaded && !userId) {
+    return <LandingPage />;
+  }
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [merchantCategories, setMerchantCategories] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
