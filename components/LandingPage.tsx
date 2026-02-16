@@ -170,7 +170,7 @@ export function LandingPage() {
             Ready to take control of your spending?
           </h2>
           <p className="text-blue-100 mb-8 max-w-2xl mx-auto">
-            Join thousands of users who track their expenses effortlessly with AI.
+            Stop wasting time on manual expense tracking. Let AI do it for you.
           </p>
           <Link href="/sign-up">
             <Button size="lg" variant="secondary" className="text-lg px-8 py-6">
