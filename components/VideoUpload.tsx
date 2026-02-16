@@ -258,17 +258,16 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     if (inputRef.current) inputRef.current.value = "";
   };
 
-  const isProcessing = ["extracting", "uploading", "processing"].includes(stepInfo.step);
+  const isProcessing = ["uploading", "processing"].includes(stepInfo.step);
 
   const steps = [
-    { id: "extracting", label: "Extract Frames", icon: Image },
-    { id: "uploading", label: "Upload", icon: Send },
+    { id: "uploading", label: "Upload", icon: Upload },
     { id: "processing", label: "AI Analysis", icon: Brain },
     { id: "completed", label: "Done", icon: Check },
   ];
 
   const getStepStatus = (stepId: string) => {
-    const stepOrder = ["extracting", "uploading", "processing", "completed"];
+    const stepOrder = ["uploading", "processing", "completed"];
     const currentIndex = stepOrder.indexOf(stepInfo.step);
     const stepIndex = stepOrder.indexOf(stepId);
     
