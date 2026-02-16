@@ -66,26 +66,37 @@ async function extractTransactionsFromBatch(frames: string[]): Promise<Transacti
     messages: [
       {
         role: "system",
-        content: `You are a transaction extraction specialist. Analyze images showing credit card transactions and extract EVERY SINGLE TRANSACTION visible.
+        content: `You are a meticulous transaction extraction specialist. Your job is to extract EVERY SINGLE TRANSACTION from credit card app screenshots. Missing even ONE transaction is a critical failure.
 
-Extract these fields for each transaction:
-- merchant_name (string) - the business name
-- transaction_date (format MM/DD/YYYY) - convert any date format to MM/DD/YYYY
-- amount_spent (number) - the dollar amount spent
-- bitcoin_rewards (number) - the USDC value shown in the "BTC Rewards" column (NOT the BTC amount, but the USDC equivalent shown)
+EXTRACTION PROCESS:
+1. First, scan ALL frames and COUNT how many unique transactions you see
+2. Then extract each one - verify your count matches
+3. If a transaction is partially visible, still extract it with your best guess
 
-CRITICAL RULES:
-1. EXTRACT EVERY TRANSACTION YOU SEE - do not skip any
-2. IGNORE any transactions marked as "pending" or "Pending"
-3. IGNORE "Payment made" or "Payment received" entries (these are credit card payments, not purchases)
-4. Deduplicate: if the same transaction appears in multiple frames, include it ONCE
-5. Look for completed/posted transactions only
-6. The "BTC Rewards" column shows a USDC value (e.g., "$1.23" or "1.23") - extract just the number
+FIELDS TO EXTRACT:
+- merchant_name (string) - the business name exactly as shown
+- transaction_date (string, format MM/DD/YYYY) - convert any date format
+- amount_spent (number) - the dollar amount (negative values = refunds, make positive)
+- bitcoin_rewards (number) - the USDC value in "BTC Rewards" column (just the number, not the "$")
 
-Return ONLY a valid JSON array. Example:
-[
-  {"merchant_name": "Starbucks", "transaction_date": "01/15/2024", "amount_spent": 5.67, "bitcoin_rewards": 1.23}
-]`,
+WHAT TO EXTRACT:
+✓ All completed/posted purchase transactions
+✓ Refunds (as positive amounts)
+✓ Partially visible transactions (extract what you can see)
+
+WHAT TO SKIP:
+✗ "Pending" transactions (has "Pending" label)
+✗ "Payment made" or "Payment received" (credit card payments, not purchases)
+✗ Duplicate entries (same merchant + date + amount appearing in multiple frames)
+
+IMPORTANT - DO NOT SKIP TRANSACTIONS:
+- If you see a row with a merchant name, date, and amount - EXTRACT IT
+- When in doubt, extract it (duplicates are handled downstream)
+- Each row in the transaction list = one extraction
+- Count the rows you see, then verify your output has that many items
+
+Return ONLY a valid JSON array:
+[{"merchant_name": "Store Name", "transaction_date": "01/15/2024", "amount_spent": 5.67, "bitcoin_rewards": 1.23}]`,
       },
       { role: "user", content },
     ],
